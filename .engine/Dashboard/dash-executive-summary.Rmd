@@ -109,7 +109,31 @@ if (!exists("er_sla_enabled"))  er_sla_enabled  <- TRUE
 if (!exists("rt_sla_enabled"))  rt_sla_enabled  <- TRUE
 any_sla_enabled <- isTRUE(vu_sla_enabled) || isTRUE(tps_sla_enabled) || isTRUE(er_sla_enabled) || isTRUE(rt_sla_enabled)
 
+report_theme_val <- if (exists("params_cfg") && !is.null(params_cfg$params$report_theme) && nzchar(trimws(as.character(params_cfg$params$report_theme)))) {
+  tolower(trimws(as.character(params_cfg$params$report_theme)))
+} else {
+  "cyber-slate"
+}
+is_cyber_slate <- identical(report_theme_val, "cyber-slate")
+
+if (is_cyber_slate) {
+  cs_css_path <- here::here(".engine/Styles", "cyber-slate.css")
+  if (file.exists(cs_css_path)) {
+    cs_css_raw <- paste(readLines(cs_css_path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+    cat('<link rel="preconnect" href="https://fonts.googleapis.com">\n')
+    cat('<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n')
+    cat('<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">\n')
+    cat(sprintf("<style>\n%s\n</style>\n", cs_css_raw))
+  }
+}
+
 status_colour <- function(status, enabled = TRUE) {
+  if (is_cyber_slate) {
+    if (!isTRUE(enabled) || !isTRUE(show_overall_status) || identical(status, "INFO")) return("#F9FAFB")
+    if (identical(status, "PASS")) return("#10B981")
+    if (identical(status, "FAIL")) return("#EF4444")
+    return("#9CA3AF")
+  }
   if (!isTRUE(enabled) || !isTRUE(show_overall_status) || identical(status, "INFO")) return("#0A0A0A")
   if (identical(status, "PASS")) return("#16A34A")
   if (identical(status, "FAIL")) return("#DC2626")

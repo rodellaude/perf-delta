@@ -2,6 +2,7 @@
 params:
   project: ""
   version: "v2.0" # Report version displayed in navbar (e.g. v2.0, 1.0.1)
+  report_theme: "cyber-slate" # Static HTML report theme: "cyber-slate" (dark) or "light"
 
 # File Locations (Relative to project root)
 rmd_template: ".engine/dashboard.Rmd"

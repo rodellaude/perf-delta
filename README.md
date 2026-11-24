@@ -1,6 +1,6 @@
-# APER Delta — Complete Usage Guide
+# Perf-Delta — Complete Usage Guide
 
-APER Delta standardises on **Apache JMeter as its single canonical data schema and calculation engine**. It transforms raw performance test results from **JMeter**, **NeoLoad**, or other load testing tools into a unified DuckDB vault and generates a self-contained interactive HTML executive report comparing **two test runs (Current vs Base)** or evaluating a single run standalone. The report provides an executive narrative summary, 2x2 KPI metrics, dynamic workload phase profiling (ramp-up, steady state, ramp-down), multi-application baseline comparisons, SLA evaluation, failure drilldown tables, and zero-lag interactive modals.
+Perf-Delta standardises on **Apache JMeter as its single canonical data schema and calculation engine**. It transforms raw performance test results from **JMeter**, **NeoLoad**, or other load testing tools into a unified DuckDB vault and generates a self-contained interactive HTML executive report comparing **two test runs (Current vs Base)** or evaluating a single run standalone. The report provides an executive narrative summary, 2x2 KPI metrics, dynamic workload phase profiling (ramp-up, steady state, ramp-down), multi-application baseline comparisons, SLA evaluation, failure drilldown tables, and zero-lag interactive modals.
 
 You do not need to know R. Everything is driven by an interactive menu
 (`launch.ps1` on Windows, `launch.sh` on Linux/macOS; legacy `frontdoor.ps1`/`frontdoor.sh` supported) which calls the R engine
@@ -204,8 +204,8 @@ This is the recommended trick on locked-down machines where you cannot install s
 ## 4. Getting the project & first run
 
 ```bash
-git clone https://github.com/rlaudeplanit/aper-delta.git
-cd aper-delta
+git clone https://github.com/rlaudeplanit/perf-delta.git
+cd perf-delta
 ```
 
 Then open `config.yaml` and set `database_path` and `output_dir` — the shipped values are
@@ -216,7 +216,7 @@ local defaults `Data/Performance_Vault.db` and `Reports` (see §6).
 opened in the project root:
 
 ```powershell
-cd C:\Tools\aper-delta
+cd C:\Tools\perf-delta
 powershell -ExecutionPolicy Bypass -File .\launch.ps1
 ```
 *(Note: `frontdoor.ps1` is retained as a backwards-compatible alias.)*
@@ -253,12 +253,12 @@ pre-populated `RLibs/` folder from a machine that already worked.
 ## 5. Project layout
 
 ```
-aper-delta/
+perf-delta/
 ├── launch.ps1                    # Primary Windows interactive launcher (frontdoor.ps1 alias)
 ├── launch.sh                     # Primary Linux/macOS interactive launcher (frontdoor.sh alias)
 ├── config.yaml                   # Main configuration (version, paths, SLA, exclusions, AI)
 ├── secrets.yaml                  # (you create this) Amplify API token — git-ignored
-├── aper-delta.Rproj              # RStudio project; also the `here::here()` root anchor
+├── perf-delta.Rproj              # RStudio project; also the `here::here()` root anchor
 ├── Evidence/                     # (optional) Drop-zone for manual infra screenshots (<run_id>/*.png)
 ├── .engine/
 │   ├── engine.R                  # Primary CLI dispatcher, Quarto/Rmd orchestrator (worker.R alias)
@@ -342,7 +342,7 @@ Report output precedence is `--outputFolder` → `output_dir` in `config.yaml` �
 
 ### Column mappings — canonical JMeter schema normalization
 
-APER Delta standardises on **Apache JMeter as the single canonical schema** across the entire pipeline. The registration step selects the source columns declared under the tool's mapping in `config.yaml` and normalises them into standard JMeter columns before writing to the unified `performance_history` table:
+Perf-Delta standardises on **Apache JMeter as the single canonical schema** across the entire pipeline. The registration step selects the source columns declared under the tool's mapping in `config.yaml` and normalises them into standard JMeter columns before writing to the unified `performance_history` table:
 
 | Canonical JMeter Field | JMeter Source Header | NeoLoad Source Header | Normalization Behavior |
 |---|---|---|---|
@@ -513,7 +513,7 @@ Fatal validation problems (bad filename, missing folder, unknown run) raise an R
 
 ## 11. Reading the report
 
-APER Delta v2.0 renders a **single-viewport (100vh) High-Density Executive Performance Dashboard** designed for executive briefings, engineering triage, and release sign-off. Everything is visible at a glance without page scrolling, backed by instant zero-lag modal drilldowns.
+Perf-Delta v2.0 renders a **single-viewport (100vh) High-Density Executive Performance Dashboard** designed for executive briefings, engineering triage, and release sign-off. Everything is visible at a glance without page scrolling, backed by instant zero-lag modal drilldowns.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
@@ -642,7 +642,7 @@ Any key omitted from the block defaults to **shown**. Turning off heavy scatter 
 
 ## 14. AI Summary & Hybrid Architecture
 
-APER Delta v2.0 features a **Hybrid Executive Summary Architecture** combining generative AI with a 100% reliable deterministic fallback engine:
+Perf-Delta v2.0 features a **Hybrid Executive Summary Architecture** combining generative AI with a 100% reliable deterministic fallback engine:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐

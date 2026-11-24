@@ -15,7 +15,7 @@ param(
 )
 
 ###################################################
-# launch.ps1 - APER Delta Interactive / CI Launcher (Windows)
+# launch.ps1 - Perf-Delta Interactive / CI Launcher (Windows)
 ###################################################
 $RScript = Join-Path $PSScriptRoot ".engine\engine.R"
 
@@ -51,7 +51,7 @@ if ([string]::IsNullOrWhiteSpace($RScriptExePath) -or !(Test-Path $RScriptExePat
 Write-Host "Using R: $RScriptExePath" -ForegroundColor DarkGray
 
 if ($isInteractive) {
-    Write-Host "--- APER Delta - Performance Data Engine ---" -ForegroundColor Cyan
+    Write-Host "--- Perf-Delta - Performance Data Engine ---" -ForegroundColor Cyan
 
     # 1. Select Operation
     Write-Host "Operations:" -ForegroundColor Yellow
@@ -171,7 +171,7 @@ if ($isInteractive) {
 ###################################################
 # EXECUTE ENGINE
 ###################################################
-Write-Output "`nLaunching APER Delta Engine..."
+Write-Output "`nLaunching Perf-Delta Engine..."
 
 $rArgs = @("--vanilla", $RScript, "--opMode=$opMode")
 

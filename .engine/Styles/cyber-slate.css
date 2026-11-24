@@ -1,0 +1,365 @@
+/* ============================================================================
+   Perf-Delta — Cyber-Slate Dark Mode Theme for Static HTML Reports
+   Matches the live React + Tailwind + Recharts Cyber-Slate Dashboard:
+     Canvas:       #0B0F19 (Deep Slate)
+     Surface:      #111827 (Dark Navy-Slate)
+     Border:       #1F2937 (1px subtle slate border)
+     Primary Text: #F9FAFB (Crisp Off-White)
+     Muted Text:   #9CA3AF (Cool Gray)
+     Pass:         #10B981 (Emerald)
+     Warn:         #F59E0B (Amber)
+     Error/Breach: #EF4444 (Crimson)
+     Metrics:      #06B6D4 (Electric Cyan) & #6366F1 (Indigo)
+   ============================================================================ */
+
+:root {
+  --cs-bg: #0B0F19;
+  --cs-surface: #111827;
+  --cs-surface-elev: #161F31;
+  --cs-border: #1F2937;
+  --cs-border-hover: #374151;
+  --cs-text: #F9FAFB;
+  --cs-muted: #9CA3AF;
+  --cs-pass: #10B981;
+  --cs-warn: #F59E0B;
+  --cs-err: #EF4444;
+  --cs-cyan: #06B6D4;
+  --cs-indigo: #6366F1;
+  --hd-icon-color: #06B6D4;
+}
+
+/* Base canvas & typography */
+html,
+body,
+.dashboard-page-wrapper,
+.dashboard-content,
+.section.level1,
+.section.level2,
+.chart-stage,
+.chart-wrapper,
+.hd-viewport {
+  background-color: var(--cs-bg) !important;
+  color: var(--cs-text) !important;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+
+/* Tabular monospace numerals for metrics, timestamps, tables & charts */
+.hd-kpi-value,
+.hd-kpi-sub,
+.hd-matrix-val,
+.hd-delta-inline,
+.hd-delta-num,
+.hd-meta-ts,
+.hd-table td.numeric-cell,
+.hd-http-badge,
+.hd-version-badge,
+.numeric-cell,
+svg text {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+  font-variant-numeric: tabular-nums !important;
+}
+
+/* Top Report Navbar */
+.hd-report-navbar {
+  background: rgba(11, 15, 25, 0.96) !important;
+  border-bottom: 1px solid var(--cs-border) !important;
+  color: var(--cs-text) !important;
+}
+
+.hd-report-navbar-title {
+  color: var(--cs-text) !important;
+}
+
+.hd-report-navbar-date,
+.hd-report-navbar-tab {
+  color: var(--cs-muted) !important;
+}
+
+.hd-version-badge {
+  background: rgba(6, 182, 212, 0.14) !important;
+  border: 1px solid rgba(6, 182, 212, 0.35) !important;
+  color: #22D3EE !important;
+}
+
+/* Top Metadata Bar */
+.hd-top-bar {
+  background: var(--cs-surface) !important;
+  border: 1px solid var(--cs-border) !important;
+  color: var(--cs-text) !important;
+  box-shadow: none !important;
+}
+
+.hd-meta-group {
+  border-color: var(--cs-border) !important;
+}
+
+.hd-meta-tag {
+  background: rgba(99, 102, 241, 0.16) !important;
+  border: 1px solid rgba(99, 102, 241, 0.35) !important;
+  color: #A5B4FC !important;
+}
+
+.hd-meta-item {
+  color: var(--cs-muted) !important;
+}
+
+.hd-meta-item strong,
+.hd-meta-ts {
+  color: var(--cs-text) !important;
+}
+
+.hd-apps-chip {
+  background: #0B0F19 !important;
+  border: 1px solid var(--cs-border) !important;
+  color: var(--cs-text) !important;
+}
+
+.hd-apps-chip:hover {
+  border-color: var(--cs-cyan) !important;
+  color: #22D3EE !important;
+}
+
+.hd-topbar-btn,
+.hd-modal-btn {
+  background: #0B0F19 !important;
+  border: 1px solid var(--cs-border) !important;
+  color: var(--cs-text) !important;
+}
+
+.hd-topbar-btn:hover,
+.hd-modal-btn:hover {
+  background: var(--cs-surface-elev) !important;
+  border-color: var(--cs-cyan) !important;
+  color: #22D3EE !important;
+}
+
+/* Executive Assessment Callout */
+.hd-assessment-callout,
+.executive-summary,
+.sub-executive-summary {
+  background: var(--cs-surface) !important;
+  border: 1px solid var(--cs-border) !important;
+  border-left: 4px solid var(--cs-cyan) !important;
+  color: var(--cs-text) !important;
+  box-shadow: none !important;
+}
+
+.hd-assessment-callout.fail,
+.executive-summary.fail {
+  border-left-color: var(--cs-err) !important;
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.08) 0%, var(--cs-surface) 38%) !important;
+}
+
+.hd-assessment-title,
+.hd-nextsteps-title {
+  color: var(--cs-text) !important;
+}
+
+.hd-summary-p,
+.hd-nextsteps-list li {
+  color: #D1D5DB !important;
+}
+
+.hd-summary-p strong {
+  color: var(--cs-text) !important;
+}
+
+.hd-summary-nextsteps-col {
+  background: rgba(11, 15, 25, 0.65) !important;
+  border: 1px solid var(--cs-border) !important;
+}
+
+/* KPI Tiles */
+.hd-kpi-tile {
+  background: var(--cs-surface) !important;
+  border: 1px solid var(--cs-border) !important;
+  box-shadow: none !important;
+}
+
+.hd-kpi-label {
+  color: var(--cs-muted) !important;
+}
+
+.hd-kpi-value {
+  color: var(--cs-text) !important;
+}
+
+.hd-kpi-sub {
+  color: var(--cs-muted) !important;
+}
+
+/* Cards & Tables */
+.hd-card,
+.hd-chart-card,
+.hd-evidence-card {
+  background: var(--cs-surface) !important;
+  border: 1px solid var(--cs-border) !important;
+  box-shadow: none !important;
+}
+
+.hd-card-header,
+.hd-chart-card-header {
+  background: rgba(11, 15, 25, 0.55) !important;
+  border-bottom: 1px solid var(--cs-border) !important;
+}
+
+.hd-card-title,
+.hd-chart-card-title {
+  color: var(--cs-text) !important;
+}
+
+.hd-card-title .hd-card-sub {
+  color: var(--cs-muted) !important;
+}
+
+.hd-table,
+.scorecard-table {
+  background: transparent !important;
+  color: var(--cs-text) !important;
+}
+
+.hd-table th,
+.scorecard-table th {
+  background: #0B0F19 !important;
+  color: var(--cs-muted) !important;
+  border-bottom: 1px solid var(--cs-border) !important;
+  border-right: 1px solid rgba(31, 41, 55, 0.6) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.hd-table td,
+.scorecard-table td {
+  background: transparent !important;
+  color: var(--cs-text) !important;
+  border-bottom: 1px solid rgba(31, 41, 55, 0.75) !important;
+  border-right: 1px solid rgba(31, 41, 55, 0.45) !important;
+}
+
+.hd-table tbody tr:hover,
+.scorecard-table tbody tr:hover {
+  background: rgba(31, 41, 55, 0.45) !important;
+}
+
+/* Semantic status & delta colors */
+.hd-delta-pass,
+.health-pass,
+.passedGreen,
+.status-pass {
+  color: var(--cs-pass) !important;
+}
+
+.hd-delta-fail,
+.health-fail,
+.failedRed,
+.status-fail {
+  color: var(--cs-err) !important;
+}
+
+.hd-delta-neutral,
+.status-na {
+  color: var(--cs-muted) !important;
+}
+
+.health-warning {
+  color: var(--cs-warn) !important;
+}
+
+.hd-microbar-track {
+  background: var(--cs-border) !important;
+}
+
+.hd-microbar-fill.pass { background: var(--cs-pass) !important; }
+.hd-microbar-fill.warn { background: var(--cs-warn) !important; }
+.hd-microbar-fill.danger { background: var(--cs-err) !important; }
+
+.hd-http-badge {
+  background: rgba(239, 68, 68, 0.16) !important;
+  border: 1px solid rgba(239, 68, 68, 0.35) !important;
+  color: #FCA5A5 !important;
+}
+
+/* Modals & Filter Pills */
+.hd-modal-dialog,
+.hd-scen-tx-modal-dialog {
+  background: var(--cs-surface) !important;
+  border: 1px solid var(--cs-border-hover) !important;
+  color: var(--cs-text) !important;
+}
+
+.hd-modal-header,
+.hd-modal-footer {
+  background: #0B0F19 !important;
+  border-color: var(--cs-border) !important;
+  color: var(--cs-text) !important;
+}
+
+.hd-modal-filter-bar,
+.hd-scen-filter-bar,
+.hd-charts-app-filter {
+  background: rgba(11, 15, 25, 0.75) !important;
+  border-bottom: 1px solid var(--cs-border) !important;
+}
+
+.hd-modal-tab-btn,
+.hd-scen-app-pill,
+.hd-charts-app-pill {
+  background: var(--cs-surface) !important;
+  border: 1px solid var(--cs-border) !important;
+  color: var(--cs-muted) !important;
+}
+
+.hd-modal-tab-btn:hover,
+.hd-modal-tab-btn.active,
+.hd-scen-app-pill:hover,
+.hd-charts-app-pill:hover {
+  background: rgba(6, 182, 212, 0.16) !important;
+  border-color: rgba(6, 182, 212, 0.45) !important;
+  color: #22D3EE !important;
+}
+
+.hd-modal-body,
+.hd-scen-tx-panel,
+.hd-scen-tx-panel-summary {
+  background: var(--cs-surface) !important;
+  color: var(--cs-text) !important;
+}
+
+/* SVG charts dark readability */
+.hd-chart-card svg,
+.hd-card svg {
+  background: transparent !important;
+}
+
+.hd-chart-card svg text {
+  fill: var(--cs-muted) !important;
+}
+
+.hd-chart-card svg line {
+  stroke: var(--cs-border) !important;
+}
+
+/* Remarks & Footer */
+.hd-remarks-bar,
+.hd-disclaimer-strip {
+  background: var(--cs-surface) !important;
+  border: 1px solid var(--cs-border) !important;
+  color: var(--cs-muted) !important;
+}
+
+.hd-remarks-input,
+.hd-remarks-preview {
+  background: #0B0F19 !important;
+  border: 1px solid var(--cs-border) !important;
+  color: var(--cs-text) !important;
+}
+
+.hd-disclaimer-strip strong {
+  color: var(--cs-text) !important;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #0B0F19; }
+::-webkit-scrollbar-thumb { background: #1F2937; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #374151; }

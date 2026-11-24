@@ -1,6 +1,6 @@
 #!/bin/bash
 ###################################################
-# launch.sh - APER Delta Interactive / CI Launcher (Linux/macOS)
+# launch.sh - Perf-Delta Interactive / CI Launcher (Linux/macOS)
 ###################################################
 
 # ── Get the directory where this script lives (project root) ──
@@ -102,7 +102,7 @@ if [ $# -gt 0 ]; then
   done
 
   echo ""
-  echo "Launching APER Delta Engine (Headless / CI Mode)..."
+  echo "Launching Perf-Delta Engine (Headless / CI Mode)..."
   "$RSCRIPT_EXE" --vanilla "$RSCRIPT_PATH" "${R_ARGS[@]}"
   exit $?
 fi
@@ -138,7 +138,7 @@ select_tool_type() {
 ###################################################
 
 echo ""
-echo "--- APER Delta - Performance Data Engine ---"
+echo "--- Perf-Delta - Performance Data Engine ---"
 echo ""
 echo "Operations:"
 echo "  1. Generate Report (Math & HTML) [Default]"
@@ -233,7 +233,7 @@ fi
 ###################################################
 
 echo ""
-echo "Launching APER Delta Engine..."
+echo "Launching Perf-Delta Engine..."
 
 if [ "$OP_MODE" = "register" ]; then
   "$RSCRIPT_EXE" --vanilla "$RSCRIPT_PATH" \
