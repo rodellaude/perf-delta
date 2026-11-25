@@ -787,6 +787,21 @@ main.content {
   color: #0F172A;
 }
 
+.hd-summary-bullets {
+  margin: 2px 0 0 0;
+  padding-left: 15px;
+  font-size: 10.8px;
+  line-height: 1.34;
+  color: #1E293B;
+  display: flex;
+  flex-direction: column;
+  gap: 2.5px;
+}
+
+.hd-summary-bullets strong {
+  color: #0F172A;
+}
+
 .hd-summary-nextsteps-col {
   background: #F8FAFC;
   border: 1px solid #E2E8F0;
@@ -1683,6 +1698,31 @@ h3.hd-card-title,
   font-size: 10.5px;
   font-weight: 600;
   color: #475569;
+}
+
+.hd-chart-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #334155;
+  background: #F8FAFC;
+  border: 1px solid #CBD5E1;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.hd-chart-copy-btn:hover {
+  background: #E2E8F0;
+  border-color: #94A3B8;
+  color: #0F172A;
+}
+.hd-chart-copy-btn.copied {
+  background: #DCFCE7;
+  border-color: #86EFAC;
+  color: #166534;
 }
 
 .hd-legend-dot {

@@ -1,9 +1,6 @@
 ###################################################
-# frontdoor.ps1 - Legacy Wrapper -> launch.ps1
+# frontdoor.ps1 - Legacy alias for register.ps1
 ###################################################
-$TargetScript = Join-Path $PSScriptRoot "launch.ps1"
-if (Test-Path $TargetScript) {
-    & $TargetScript @args
-} else {
-    Write-Host "ERROR: launch.ps1 not found in $PSScriptRoot" -ForegroundColor Red
-}
+Write-Host "Note: 'frontdoor.ps1' has been replaced by 'register.ps1'. Forwarding..." -ForegroundColor DarkYellow
+& (Join-Path $PSScriptRoot "register.ps1") @args
+exit $LASTEXITCODE

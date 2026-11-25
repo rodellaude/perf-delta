@@ -116,16 +116,56 @@ report_theme_val <- if (exists("params_cfg") && !is.null(params_cfg$params$repor
 }
 is_cyber_slate <- identical(report_theme_val, "cyber-slate")
 
-if (is_cyber_slate) {
-  cs_css_path <- here::here(".engine/Styles", "cyber-slate.css")
-  if (file.exists(cs_css_path)) {
-    cs_css_raw <- paste(readLines(cs_css_path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
-    cat('<link rel="preconnect" href="https://fonts.googleapis.com">\n')
-    cat('<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n')
-    cat('<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">\n')
-    cat(sprintf("<style>\n%s\n</style>\n", cs_css_raw))
-  }
+cs_css_path <- here::here(".engine/Styles", "cyber-slate.css")
+default_theme_str <- if (is_cyber_slate) "dark" else "light"
+cat('\n```{=html}\n')
+cat('<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">\n')
+if (file.exists(cs_css_path)) {
+  cs_css_raw <- paste(readLines(cs_css_path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+  cat(sprintf("<style>\n%s\n</style>\n", cs_css_raw))
 }
+cat(sprintf('<script>
+(function() {
+  var defaultTheme = "%s";
+  var saved = null;
+  try { saved = localStorage.getItem("perf-delta-static-theme"); } catch(e) {}
+  var theme = (saved === "dark" || saved === "light") ? saved : defaultTheme;
+  document.documentElement.setAttribute("data-theme", theme);
+  window.__PERF_DELTA_CYBER_SLATE__ = (theme === "dark");
+  function syncToggleBtn() {
+    var btn = document.getElementById("hd-theme-toggle-btn");
+    if (!btn) return;
+    var cur = document.documentElement.getAttribute("data-theme") || defaultTheme;
+    btn.textContent = (cur === "dark") ? "☀ Light" : "🌙 Dark";
+    btn.title = (cur === "dark") ? "Switch to Light theme" : "Switch to Cyber-Slate Dark theme";
+  }
+  window.toggleReportTheme = function() {
+    var cur = document.documentElement.getAttribute("data-theme") || defaultTheme;
+    var next = (cur === "dark") ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    window.__PERF_DELTA_CYBER_SLATE__ = (next === "dark");
+    try { localStorage.setItem("perf-delta-static-theme", next); } catch(e) {}
+    syncToggleBtn();
+  };
+  document.addEventListener("DOMContentLoaded", syncToggleBtn);
+})();
+</script>\n', default_theme_str))
+cat('```\n\n')
+
+# Theme-aware palette tokens for inline HTML & SVG elements
+ui_text_primary <- if (is_cyber_slate) "#F9FAFB" else "#0F172A"
+ui_text_body    <- if (is_cyber_slate) "#D1D5DB" else "#1E293B"
+ui_text_muted   <- if (is_cyber_slate) "#9CA3AF" else "#64748B"
+ui_surface_sub  <- if (is_cyber_slate) "#0B0F19" else "#F8FAFC"
+ui_border_col   <- if (is_cyber_slate) "#1F2937" else "#E2E8F0"
+ui_track_bg     <- if (is_cyber_slate) "#1F2937" else "#E2E8F0"
+ui_pass_col     <- if (is_cyber_slate) "#10B981" else "#16A34A"
+ui_warn_col     <- if (is_cyber_slate) "#F59E0B" else "#D97706"
+ui_err_col      <- if (is_cyber_slate) "#EF4444" else "#DC2626"
+ui_cyan_col     <- if (is_cyber_slate) "#06B6D4" else "#0F172A"
+ui_indigo_col   <- if (is_cyber_slate) "#6366F1" else "#6366F1"
+ui_active_bg    <- if (is_cyber_slate) "#06B6D4" else "#0A0A0A"
+ui_active_fg    <- if (is_cyber_slate) "#0B0F19" else "#FFFFFF"
 
 status_colour <- function(status, enabled = TRUE) {
   if (is_cyber_slate) {
@@ -495,6 +535,7 @@ report_navbar_html <- sprintf(
      </div>
      <div class="hd-report-navbar-right">
        <span>Scenario: <strong style="color:#FFFFFF;">%s</strong> &nbsp;|&nbsp; Runs: <strong style="color:#FFFFFF;">#%s vs #%s</strong> &nbsp;|&nbsp; Date: <strong style="color:#FFFFFF;">%s</strong></span>
+       <button type="button" id="hd-theme-toggle-btn" class="hd-theme-toggle-btn" onclick="toggleReportTheme()" title="Toggle Light / Cyber-Slate Dark theme">%s</button>
      </div>
    </div>',
   favicon_link_html,
@@ -505,7 +546,8 @@ report_navbar_html <- sprintf(
   scenario_name,
   current_run_id,
   baseline_run_id,
-  report_date_fmt
+  report_date_fmt,
+  if (is_cyber_slate) "☀ Light" else "🌙 Dark"
 )
 
 slarules_btn_html <- if (isTRUE(any_sla_enabled)) {
@@ -897,7 +939,16 @@ final_p1 <- det_p1
 final_p2 <- det_p2
 final_next_steps <- det_next_steps
 
-# --- Attempt Amplify AI Generation if Enabled ---
+# --- Attempt AI Generation (Gemini or Amplify) if Enabled ---
+ai_url_cfg <- if (!is.null(cfg$ai_url) && nzchar(trimws(as.character(cfg$ai_url)))) {
+  trimws(as.character(cfg$ai_url))
+} else if (exists("params_cfg") && !is.null(params_cfg$ai_url)) {
+  trimws(as.character(params_cfg$ai_url))
+} else {
+  "https://amplify.planittesting.com/external/api/completion"
+}
+is_gemini_provider <- grepl("generativelanguage\\.googleapis\\.com", ai_url_cfg, ignore.case = TRUE)
+
 api_key <- tryCatch({
   sec_file <- if (file.exists(here::here("secrets.yaml"))) {
     here::here("secrets.yaml")
@@ -908,10 +959,15 @@ api_key <- tryCatch({
   } else if (file.exists("../secrets.yaml")) {
     "../secrets.yaml"
   } else NULL
+  k <- NULL
   if (!is.null(sec_file)) {
-    k <- yaml::read_yaml(sec_file)$amplify_token
-    if (!is.null(k)) trimws(as.character(k)) else NULL
-  } else NULL
+    sec_data <- yaml::read_yaml(sec_file)
+    k <- if (is_gemini_provider) sec_data$gemini_api_key else sec_data$amplify_token
+  }
+  if ((is.null(k) || !nzchar(trimws(as.character(k)))) && is_gemini_provider) {
+    k <- Sys.getenv("GEMINI_API_KEY", unset = "")
+  }
+  if (!is.null(k) && nzchar(trimws(as.character(k)))) trimws(as.character(k)) else NULL
 }, error = function(e) NULL)
 
 cfg_ai_enabled <- isTRUE(as.logical(cfg$ai_summary_enabled)) || identical(tolower(as.character(cfg$ai_summary_enabled)), "true")
@@ -951,34 +1007,112 @@ Next steps:
 - Third bullet: Re-running the test under the same load to confirm the fix worked."
   }
 
+  run_date_str <- tryCatch(format_run_ts(current_run$start_time[1], "%d %B %Y", append_tz = FALSE), error = function(e) "")
+
+  journey_breakdown_str <- if (has_baseline && exists("db_logical_scenario_summary") && nrow(logical_health_df) > 0) {
+    base_sc_tmp <- db_logical_scenario_summary %>%
+      filter(run_id == baseline_run_id) %>%
+      select(app_name, logical_scenario, base_pct_rt = pct_rt, base_err = error_rate)
+    sc_comp <- logical_health_df %>%
+      left_join(base_sc_tmp, by = c("app_name", "logical_scenario")) %>%
+      mutate(
+        rt_delta_pct = ifelse(!is.na(base_pct_rt) & base_pct_rt > 0, round(((pct_rt - base_pct_rt) / base_pct_rt) * 100, 1), NA_real_),
+        trend = case_when(
+          is.na(rt_delta_pct) ~ "no baseline",
+          rt_delta_pct < -2   ~ sprintf("%.1f%% faster (improved)", abs(rt_delta_pct)),
+          rt_delta_pct > 2    ~ sprintf("+%.1f%% slower (regressed)", rt_delta_pct),
+          TRUE                ~ sprintf("%+.1f%% (stable)", rt_delta_pct)
+        )
+      ) %>%
+      arrange(desc(rt_delta_pct))
+    paste(sapply(seq_len(nrow(sc_comp)), function(i) {
+      r <- sc_comp[i, ]
+      if (!is.na(r$base_pct_rt)) {
+        sprintf("- %s: %s ms vs %s ms baseline (%s)",
+                r$logical_scenario, format(round(r$pct_rt), big.mark = ","), format(round(r$base_pct_rt), big.mark = ","), r$trend)
+      } else {
+        sprintf("- %s: %s ms (no baseline)", r$logical_scenario, format(round(r$pct_rt), big.mark = ","))
+      }
+    }), collapse = "\n")
+  } else {
+    "No baseline scenario comparison available."
+  }
+
+  error_breakdown_str <- tryCatch({
+    err_sum_cur <- db_error_summary %>% filter(run_id == current_run_id)
+    err_det_cur <- db_error_details %>% filter(run_id == current_run_id)
+    if (nrow(err_sum_cur) == 0 && nrow(err_det_cur) == 0) {
+      "No transaction or HTTP errors occurred (0.00% error rate)."
+    } else {
+      tx_part <- if (nrow(err_sum_cur) > 0) {
+        paste(
+          sprintf("Total Failing Transactions: %d (%s total errors): %s",
+                  nrow(err_sum_cur),
+                  format(sum(err_sum_cur$errors, na.rm = TRUE), big.mark = ","),
+                  paste(sapply(seq_len(min(nrow(err_sum_cur), 10)), function(i) {
+                    sprintf("%s (%d)", err_sum_cur$label[i], err_sum_cur$errors[i])
+                  }), collapse = ", "))
+        )
+      } else ""
+      det_part <- if (nrow(err_det_cur) > 0) {
+        paste(sapply(seq_len(min(nrow(err_det_cur), 12)), function(i) {
+          r <- err_det_cur[i, ]
+          code_txt <- ifelse(is.na(r$responseCode) | r$responseCode %in% c("", "0", "NA", "N/A"), "Non-HTTP", paste0("HTTP ", r$responseCode))
+          sprintf("- %s | %s: %s (%d errors)", r$label, code_txt, r$responseMessage, r$error_count)
+        }), collapse = "\n")
+      } else ""
+      trimws(paste(tx_part, det_part, sep = "\n"))
+    }
+  }, error = function(e) "Error details unavailable.")
+
   template_vars <- list(
-    app_names       = app_names_str,
-    env             = env_str,
-    test_type       = test_type_str,
-    vu_actual       = as.character(vu_actual),
-    duration_desc   = duration_desc,
-    ramp_up         = val_ramp_up,
-    steady_state    = val_steady_state,
-    ramp_down       = ifelse(nzchar(val_ramp_down), val_ramp_down, "none"),
-    throughput      = sprintf("%.2f", current_run$throughput[1]),
-    error_rate      = sprintf("%.2f", current_run$error_rate[1]),
-    latency         = current_rt_fmt,
-    current_rt      = current_rt_fmt,
-    rt_metric       = rt_metric_name,
-    baseline_run_id = as.character(baseline_run_id),
-    baseline_comp   = sprintf("%s vs Baseline #%s: %s", rt_metric_name, baseline_run_id, rt_comp_str),
-    overall_status  = if (!isTRUE(show_overall_status)) "INFORMATIONAL (Do NOT state PASS or FAIL; describe the findings in plain English)" else ifelse(isTRUE(overall_status), "PASS", "FAIL"),
-    breach_cnt      = as.character(breach_cnt),
-    worst_label     = worst_label,
-    worst_rt        = as.character(worst_rt),
-    worst_sla       = as.character(worst_sla),
-    flow_theme      = flow_theme
+    app_names         = app_names_str,
+    env               = ifelse(nzchar(env_str), env_str, "N/A"),
+    test_type         = sub("^A\\s+", "", test_type_str),
+    run_date          = run_date_str,
+    vu_actual         = as.character(vu_actual),
+    duration_desc     = duration_desc,
+    ramp_up           = val_ramp_up,
+    steady_state      = val_steady_state,
+    ramp_down         = ifelse(nzchar(val_ramp_down), val_ramp_down, "none"),
+    throughput        = sprintf("%.2f", current_run$throughput[1]),
+    error_rate        = sprintf("%.2f", current_run$error_rate[1]),
+    latency           = current_rt_fmt,
+    current_rt        = current_rt_fmt,
+    rt_metric         = rt_metric_name,
+    baseline_run_id   = ifelse(has_baseline, as.character(baseline_run_id), "N/A"),
+    baseline_comp     = ifelse(
+      has_baseline,
+      sprintf("%s vs Baseline #%s: %s", rt_metric_name, baseline_run_id, rt_comp_str),
+      "Standalone single-run report (no baseline)"
+    ),
+    overall_status    = if (!isTRUE(show_overall_status)) "INFORMATIONAL (Do NOT state PASS or FAIL; describe the findings in plain English)" else ifelse(isTRUE(overall_status), "PASS", "FAIL"),
+    breach_cnt        = as.character(breach_cnt),
+    worst_label       = worst_label,
+    worst_rt          = as.character(worst_rt),
+    worst_sla         = as.character(worst_sla),
+    flow_theme        = flow_theme,
+    journey_breakdown = journey_breakdown_str,
+    error_breakdown   = error_breakdown_str
   )
 
   ai_prompt <- prompt_template
+  if (!nzchar(env_str)) {
+    ai_prompt <- gsub("Application : {app_names} ({env})", "Application : {app_names}", ai_prompt, fixed = TRUE)
+  }
   for (var_name in names(template_vars)) {
     ai_prompt <- gsub(paste0("{", var_name, "}"), template_vars[[var_name]], ai_prompt, fixed = TRUE)
   }
+  if (!isTRUE(has_baseline)) {
+    ai_prompt <- paste0(
+      ai_prompt,
+      "\n\nIMPORTANT NOTE: This is a standalone single-run report with NO baseline run. Do NOT mention any baseline run, baseline comparison, or lack of baseline comparison."
+    )
+  }
+  ai_prompt <- paste0(
+    ai_prompt,
+    "\n\nFormatting: Start directly with Paragraph 1. Do NOT include any introductory or preamble line (such as 'Here is an executive summary...')."
+  )
   if (!isTRUE(show_overall_status) || !isTRUE(any_sla_enabled)) {
     extra_note <- if (!isTRUE(rt_sla_enabled)) {
       sprintf(
@@ -992,28 +1126,61 @@ Next steps:
   }
 
   ai_text <- tryCatch({
-    ai_url <- if (exists("params_cfg") && !is.null(params_cfg$ai_url)) params_cfg$ai_url else "https://amplify.planittesting.com/external/api/completion"
-    ai_model <- if (exists("params_cfg") && !is.null(params_cfg$ai_model_id)) params_cfg$ai_model_id else "19b89d52-23cf-463d-a5bb-c2896a0f8661"
+    ai_url <- ai_url_cfg
+    ai_model <- if (!is.null(cfg$ai_model_id) && nzchar(trimws(as.character(cfg$ai_model_id)))) {
+      trimws(as.character(cfg$ai_model_id))
+    } else if (exists("params_cfg") && !is.null(params_cfg$ai_model_id)) {
+      trimws(as.character(params_cfg$ai_model_id))
+    } else if (is_gemini_provider) {
+      "gemini-2.5-flash"
+    } else {
+      "19b89d52-23cf-463d-a5bb-c2896a0f8661"
+    }
 
     resp_text <- NULL
     if (requireNamespace("httr", quietly = TRUE)) {
-      resp <- httr::POST(
-        url = ai_url,
-        httr::add_headers("accept" = "*/*", "token" = api_key, "Content-Type" = "application/json"),
-        body = jsonlite::toJSON(list(
-          model_id   = ai_model,
-          messages   = list(list(role = "user", content = ai_prompt)),
-          parameters = list(temperature = 0.3)
-        ), auto_unbox = TRUE),
-        encode = "json",
-        httr::timeout(35)
-      )
-      if (httr::status_code(resp) == 200) {
-        parsed <- jsonlite::fromJSON(httr::content(resp, "text", encoding = "UTF-8"), simplifyVector = FALSE)
-        if (!is.null(parsed$assistant_resp) &&
-            nchar(trimws(parsed$assistant_resp)) > 30 &&
-            !grepl("^\\s*(unauthorized|error\\b|invalid\\s*token)", tolower(parsed$assistant_resp), perl = TRUE)) {
-          resp_text <- parsed$assistant_resp
+      if (is_gemini_provider) {
+        gemini_endpoint <- if (grepl(":generateContent", ai_url, fixed = TRUE)) {
+          gsub("{model}", ai_model, ai_url, fixed = TRUE)
+        } else {
+          sprintf("%s/%s:generateContent", sub("/+$", "", ai_url), ai_model)
+        }
+        resp <- httr::POST(
+          url = gemini_endpoint,
+          httr::add_headers("Content-Type" = "application/json", "x-goog-api-key" = api_key),
+          body = jsonlite::toJSON(list(
+            contents = list(list(parts = list(list(text = ai_prompt)))),
+            generationConfig = list(temperature = 0.3)
+          ), auto_unbox = TRUE),
+          encode = "json",
+          httr::timeout(35)
+        )
+        if (httr::status_code(resp) == 200) {
+          parsed <- jsonlite::fromJSON(httr::content(resp, "text", encoding = "UTF-8"), simplifyVector = FALSE)
+          cand_text <- tryCatch(parsed$candidates[[1]]$content$parts[[1]]$text, error = function(e) NULL)
+          if (!is.null(cand_text) && nchar(trimws(cand_text)) > 30) {
+            resp_text <- cand_text
+          }
+        }
+      } else {
+        resp <- httr::POST(
+          url = ai_url,
+          httr::add_headers("accept" = "*/*", "token" = api_key, "Content-Type" = "application/json"),
+          body = jsonlite::toJSON(list(
+            model_id   = ai_model,
+            messages   = list(list(role = "user", content = ai_prompt)),
+            parameters = list(temperature = 0.3)
+          ), auto_unbox = TRUE),
+          encode = "json",
+          httr::timeout(35)
+        )
+        if (httr::status_code(resp) == 200) {
+          parsed <- jsonlite::fromJSON(httr::content(resp, "text", encoding = "UTF-8"), simplifyVector = FALSE)
+          if (!is.null(parsed$assistant_resp) &&
+              nchar(trimws(parsed$assistant_resp)) > 30 &&
+              !grepl("^\\s*(unauthorized|error\\b|invalid\\s*token)", tolower(parsed$assistant_resp), perl = TRUE)) {
+            resp_text <- parsed$assistant_resp
+          }
         }
       }
     }
@@ -1037,8 +1204,12 @@ Next steps:
     narrative_text <- ai_text
     bullets_text <- ""
 
-    if (grepl("(?i)\n\\s*(Next steps|Recommended actions|Key actions)[:\\s]*", ai_text, perl = TRUE)) {
-      secs <- strsplit(ai_text, "(?i)\n\\s*(Next steps|Recommended actions|Key actions)[:\\s]*", perl = TRUE)[[1]]
+    if (grepl("(?i)\n\\s*[*_#]*\\s*(Next steps|Recommended actions|Key actions)[*_:\\s]*\r?\n", ai_text, perl = TRUE)) {
+      secs <- strsplit(ai_text, "(?i)\n\\s*[*_#]*\\s*(Next steps|Recommended actions|Key actions)[*_:\\s]*\r?\n", perl = TRUE)[[1]]
+      narrative_text <- secs[1]
+      bullets_text <- paste(secs[-1], collapse = "\n")
+    } else if (grepl("(?i)\n\\s*[*_#]*\\s*(Next steps|Recommended actions|Key actions)[:\\s*]*", ai_text, perl = TRUE)) {
+      secs <- strsplit(ai_text, "(?i)\n\\s*[*_#]*\\s*(Next steps|Recommended actions|Key actions)[:\\s*]*", perl = TRUE)[[1]]
       narrative_text <- secs[1]
       bullets_text <- paste(secs[-1], collapse = "\n")
     } else {
@@ -1050,14 +1221,18 @@ Next steps:
       }
     }
 
-    # Extract paragraphs
+    # Extract paragraphs / narrative blocks
     p_parts <- strsplit(trimws(narrative_text), "\n\n+")[[1]]
     p_paras <- sapply(p_parts, clean_p, USE.NAMES = FALSE)
     p_paras <- p_paras[nzchar(p_paras)]
+    # Drop conversational AI preambles (e.g. "Here's an executive summary...")
+    if (length(p_paras) >= 2 && grepl("^(?i)(here('s| is)|below is|sure[,!:]|certainly[,!:]|executive summary).*:$", p_paras[1], perl = TRUE)) {
+      p_paras <- p_paras[-1]
+    }
 
     if (length(p_paras) >= 2) {
       final_p1 <- p_paras[1]
-      final_p2 <- p_paras[2]
+      final_p2 <- paste(p_paras[-1], collapse = "\n")
     } else if (length(p_paras) == 1) {
       final_p1 <- p_paras[1]
     }
@@ -1075,11 +1250,49 @@ Next steps:
 }
 
 to_html_bold <- function(x) {
-  gsub("\\*\\*(.*?)\\*\\*", "<strong>\\1</strong>", x)
+  x <- gsub("\\*\\*(.*?)\\*\\*", "<strong>\\1</strong>", x)
+  gsub("`([^`]+)`", "<code>\\1</code>", x)
 }
 
-final_p1 <- to_html_bold(final_p1)
-final_p2 <- to_html_bold(final_p2)
+format_narrative_block <- function(txt) {
+  lines <- trimws(unlist(strsplit(txt, "\r?\n")))
+  lines <- lines[nzchar(lines)]
+  if (length(lines) == 0) return("")
+  is_b <- grepl("^[-*•]\\s+", lines)
+  if (!any(is_b)) {
+    return(sprintf('<p class="hd-summary-p">%s</p>', to_html_bold(paste(lines, collapse = " "))))
+  }
+  out <- character(0)
+  p_buf <- character(0)
+  b_buf <- character(0)
+  flush_p <- function() {
+    if (length(p_buf) > 0) {
+      out <<- c(out, sprintf('<p class="hd-summary-p">%s</p>', to_html_bold(paste(p_buf, collapse = " "))))
+      p_buf <<- character(0)
+    }
+  }
+  flush_b <- function() {
+    if (length(b_buf) > 0) {
+      items <- paste(sprintf("<li>%s</li>", to_html_bold(b_buf)), collapse = "")
+      out <<- c(out, sprintf('<ul class="hd-summary-bullets">%s</ul>', items))
+      b_buf <<- character(0)
+    }
+  }
+  for (ln in lines) {
+    if (grepl("^[-*•]\\s+", ln)) {
+      flush_p()
+      b_buf <- c(b_buf, sub("^[-*•]\\s+", "", ln))
+    } else {
+      flush_b()
+      p_buf <- c(p_buf, ln)
+    }
+  }
+  flush_p()
+  flush_b()
+  paste(out, collapse = "\n")
+}
+
+narrative_html_blocks <- paste(c(format_narrative_block(final_p1), format_narrative_block(final_p2)), collapse = "\n")
 final_next_steps <- to_html_bold(final_next_steps)
 
 next_steps_items_html <- paste(sprintf("<li>%s</li>", final_next_steps), collapse = "")
@@ -1087,8 +1300,7 @@ next_steps_items_html <- paste(sprintf("<li>%s</li>", final_next_steps), collaps
 executive_summary_html <- sprintf(
   '<div class="hd-summary-body-grid">
      <div class="hd-summary-narrative-col">
-       <p class="hd-summary-p">%s</p>
-       <p class="hd-summary-p">%s</p>
+       %s
      </div>
      <div class="hd-summary-nextsteps-col">
        <div class="hd-nextsteps-title">%s Next Steps:</div>
@@ -1097,13 +1309,12 @@ executive_summary_html <- sprintf(
        </ul>
      </div>
    </div>',
-  final_p1,
-  final_p2,
+  narrative_html_blocks,
   render_svg_icon("clipboard", 13),
   next_steps_items_html
 )
 
-vu_card_colour <- if (isTRUE(show_overall_status) && isTRUE(vu_sla_enabled) && identical(vu_status, "FAIL")) "#DC2626" else "#0A0A0A"
+vu_card_colour <- if (isTRUE(show_overall_status) && isTRUE(vu_sla_enabled) && identical(vu_status, "FAIL")) ui_err_col else ui_text_primary
 vu_sub_text    <- if (isTRUE(vu_sla_enabled)) paste("Target", vu_target) else "SLA: Disabled"
 
 tp_val_text    <- if (isTRUE(tps_sla_enabled)) sprintf("%d of %d", tp_app_passed, tp_app_total) else sprintf("%.2f TPS", current_run$throughput[1])
@@ -1875,13 +2086,26 @@ bot_grid_html <- sprintf('<div class="hd-grid-2col hd-bot-grid">%s%s</div>', lef
 # ============================================================
 
 # ---- 8.0 Build Lightweight Pure-SVG Executive Charts ----
-ts_cur  <- if (exists("db_timeseries")) db_timeseries %>% filter(run_id == current_run_id) %>% arrange(elapsed_min) else tibble()
-ts_base <- if (exists("db_timeseries")) db_timeseries %>% filter(run_id == baseline_run_id) %>% arrange(elapsed_min) else tibble()
+ts_bin_val <- if (exists("ts_bin_secs") && is.numeric(ts_bin_secs) && length(ts_bin_secs) == 1) as.integer(ts_bin_secs) else 60L
+ts_use_sec <- (ts_bin_val < 60L) && exists("db_timeseries") && ("elapsed_sec" %in% names(db_timeseries))
+ts_x_col   <- if (ts_use_sec) "elapsed_sec" else "elapsed_min"
+ts_x_unit  <- if (ts_use_sec) "s" else "m"
+ts_interval_label <- if (ts_bin_val == 1L) {
+  "1-Sec Intervals"
+} else if (ts_bin_val < 60L) {
+  sprintf("%d-Sec Intervals", ts_bin_val)
+} else {
+  "1-Min Intervals"
+}
+
+ts_cur  <- if (exists("db_timeseries")) db_timeseries %>% filter(run_id == current_run_id) %>% arrange(.data[[ts_x_col]]) else tibble()
+ts_base <- if (exists("db_timeseries")) db_timeseries %>% filter(run_id == baseline_run_id) %>% arrange(.data[[ts_x_col]]) else tibble()
 
 build_svg_dual_line_chart <- function(cur_df, base_df, y_col, y_label, unit_str = "",
                                       cur_color = "#0F172A", base_color = "#64748B",
                                       ref_val = NULL, ref_label = NULL,
                                       sec_col = NULL, sec_label = NULL,
+                                      x_col = ts_x_col, x_unit = ts_x_unit,
                                       svg_w = 520, svg_h = 195) {
   if (nrow(cur_df) == 0) {
     return("<p style='color:#64748B;font-size:11px;padding:12px;'>No time-series data available.</p>")
@@ -1890,21 +2114,32 @@ build_svg_dual_line_chart <- function(cur_df, base_df, y_col, y_label, unit_str 
   plot_w <- svg_w - pad_l - pad_r
   plot_h <- svg_h - pad_t - pad_b
 
-  max_x <- max(c(cur_df$elapsed_min, if (nrow(base_df) > 0) base_df$elapsed_min else 1, 1), na.rm = TRUE)
-  all_y <- c(cur_df[[y_col]], if (nrow(base_df) > 0) base_df[[y_col]] else numeric(0), if (!is.null(ref_val)) ref_val else numeric(0))
-  max_y <- max(c(all_y * 1.12, 1), na.rm = TRUE)
+  cur_x  <- cur_df[[x_col]]
+  base_x <- if (nrow(base_df) > 0 && x_col %in% names(base_df)) base_df[[x_col]] else numeric(0)
+  max_x  <- max(c(cur_x, base_x, 1), na.rm = TRUE)
+  all_y  <- c(cur_df[[y_col]], if (nrow(base_df) > 0) base_df[[y_col]] else numeric(0), if (!is.null(ref_val)) ref_val else numeric(0))
+  max_y  <- max(c(all_y * 1.12, 1), na.rm = TRUE)
 
   scale_x <- function(x) round(pad_l + (x / max_x) * plot_w, 1)
   scale_y <- function(y) round(pad_t + plot_h - (pmin(pmax(y, 0), max_y) / max_y) * plot_h, 1)
 
   # Horizontal gridlines & Y ticks (4 steps)
+  grid_stroke <- if (is_cyber_slate) "#1F2937" else "#F1F5F9"
+  axis_stroke <- if (is_cyber_slate) "#374151" else "#CBD5E1"
+  tick_fill   <- ui_text_muted
+  pt_stroke   <- if (is_cyber_slate) "#0B0F19" else "#FFFFFF"
+  vu_poly_fill <- if (is_cyber_slate) "#6366F1" else "#EEF2FF"
+  vu_poly_op   <- if (is_cyber_slate) "0.18" else "0.75"
+  vu_line_col  <- if (is_cyber_slate) "#818CF8" else "#A5B4FC"
+  vu_txt_col   <- if (is_cyber_slate) "#818CF8" else "#6366F1"
+
   y_ticks <- seq(0, max_y, length.out = 5)
   grid_svg <- paste(sapply(y_ticks, function(yv) {
     yp <- scale_y(yv)
     lbl <- if (yv >= 1000) format(round(yv, 0), big.mark = ",") else round(yv, 1)
     sprintf(
-      "<line x1='%d' y1='%s' x2='%d' y2='%s' stroke='#F1F5F9' stroke-width='1'/><text x='%d' y='%s' text-anchor='end' fill='#64748B' font-size='9.5' font-family='Consolas,monospace'>%s</text>",
-      pad_l, yp, pad_l + plot_w, yp, pad_l - 5, yp + 3, lbl
+      "<line x1='%d' y1='%s' x2='%d' y2='%s' stroke='%s' stroke-width='1'/><text x='%d' y='%s' text-anchor='end' fill='%s' font-size='9.5' font-family='JetBrains Mono,Consolas,monospace'>%s</text>",
+      pad_l, yp, pad_l + plot_w, yp, grid_stroke, pad_l - 5, yp + 3, tick_fill, lbl
     )
   }), collapse = "")
 
@@ -1913,8 +2148,8 @@ build_svg_dual_line_chart <- function(cur_df, base_df, y_col, y_label, unit_str 
   x_svg <- paste(sapply(x_ticks, function(xv) {
     xp <- scale_x(xv)
     sprintf(
-      "<line x1='%s' y1='%d' x2='%s' y2='%d' stroke='#CBD5E1' stroke-width='1'/><text x='%s' y='%d' text-anchor='middle' fill='#64748B' font-size='9.5' font-family='Consolas,monospace'>%dm</text>",
-      xp, pad_t + plot_h, xp, pad_t + plot_h + 4, xp, pad_t + plot_h + 15, xv
+      "<line x1='%s' y1='%d' x2='%s' y2='%d' stroke='%s' stroke-width='1'/><text x='%s' y='%d' text-anchor='middle' fill='%s' font-size='9.5' font-family='JetBrains Mono,Consolas,monospace'>%d%s</text>",
+      xp, pad_t + plot_h, xp, pad_t + plot_h + 4, axis_stroke, xp, pad_t + plot_h + 15, tick_fill, xv, x_unit
     )
   }), collapse = "")
 
@@ -1923,40 +2158,63 @@ build_svg_dual_line_chart <- function(cur_df, base_df, y_col, y_label, unit_str 
   if (!is.null(sec_col) && sec_col %in% names(cur_df)) {
     max_sec <- max(c(cur_df[[sec_col]] * 1.15, 1), na.rm = TRUE)
     scale_sec_y <- function(y) round(pad_t + plot_h - (pmin(pmax(y, 0), max_sec) / max_sec) * plot_h, 1)
-    pts_sec <- paste(sprintf("%s,%s", scale_x(cur_df$elapsed_min), scale_sec_y(cur_df[[sec_col]])), collapse = " ")
-    poly_sec <- sprintf("%s,%d %s %s,%d", scale_x(min(cur_df$elapsed_min)), pad_t + plot_h, pts_sec, scale_x(max(cur_df$elapsed_min)), pad_t + plot_h)
+    pts_sec <- paste(sprintf("%s,%s", scale_x(cur_x), scale_sec_y(cur_df[[sec_col]])), collapse = " ")
+    poly_sec_svg <- if (nrow(cur_df) > 1) {
+      poly_sec <- sprintf("%s,%d %s %s,%d", scale_x(min(cur_x)), pad_t + plot_h, pts_sec, scale_x(max(cur_x)), pad_t + plot_h)
+      sprintf("<polygon points='%s' fill='%s' opacity='%s'/><polyline points='%s' fill='none' stroke='%s' stroke-width='1.2' stroke-dasharray='2,2'/>",
+              poly_sec, vu_poly_fill, vu_poly_op, pts_sec, vu_line_col)
+    } else {
+      sprintf("<circle cx='%s' cy='%s' r='3' fill='%s'/>", scale_x(cur_x), scale_sec_y(cur_df[[sec_col]]), vu_line_col)
+    }
     sec_ticks <- seq(0, max_sec, length.out = 3)
     sec_axis <- paste(sapply(sec_ticks, function(sv) {
       yp <- scale_sec_y(sv)
-      sprintf("<text x='%d' y='%s' text-anchor='start' fill='#6366F1' font-size='9' font-family='Consolas,monospace'>%d VU</text>",
-              pad_l + plot_w + 4, yp + 3, round(sv))
+      sprintf("<text x='%d' y='%s' text-anchor='start' fill='%s' font-size='9' font-family='JetBrains Mono,Consolas,monospace'>%d VU</text>",
+              pad_l + plot_w + 4, yp + 3, vu_txt_col, round(sv))
     }), collapse = "")
-    sec_svg <- sprintf("<polygon points='%s' fill='#EEF2FF' opacity='0.75'/><polyline points='%s' fill='none' stroke='#A5B4FC' stroke-width='1.2' stroke-dasharray='2,2'/>%s",
-                       poly_sec, pts_sec, sec_axis)
+    sec_svg <- paste0(poly_sec_svg, sec_axis)
   }
 
-  # Baseline polyline
+  # Baseline polyline + optional point markers
   base_svg <- ""
   if (nrow(base_df) > 0 && has_baseline) {
-    pts_b <- paste(sprintf("%s,%s", scale_x(base_df$elapsed_min), scale_y(base_df[[y_col]])), collapse = " ")
-    base_svg <- sprintf("<polyline points='%s' fill='none' stroke='%s' stroke-width='1.6' stroke-dasharray='4,3' opacity='0.85'/>", pts_b, base_color)
+    base_line <- if (nrow(base_df) > 1) {
+      pts_b <- paste(sprintf("%s,%s", scale_x(base_x), scale_y(base_df[[y_col]])), collapse = " ")
+      sprintf("<polyline points='%s' fill='none' stroke='%s' stroke-width='1.6' stroke-dasharray='4,3' opacity='0.85'/>", pts_b, base_color)
+    } else ""
+    base_pts <- if (nrow(base_df) <= 60) {
+      paste(sprintf(
+        "<circle cx='%s' cy='%s' r='2.5' fill='%s' opacity='0.85'><title>Base %s%s: %s %s</title></circle>",
+        scale_x(base_x), scale_y(base_df[[y_col]]), base_color,
+        base_x, x_unit, format(round(base_df[[y_col]], 2), big.mark = ","), y_label
+      ), collapse = "")
+    } else ""
+    base_svg <- paste0(base_line, base_pts)
   }
 
-  # Current area + polyline
-  pts_c <- paste(sprintf("%s,%s", scale_x(cur_df$elapsed_min), scale_y(cur_df[[y_col]])), collapse = " ")
-  poly_c <- sprintf("%s,%d %s %s,%d", scale_x(min(cur_df$elapsed_min)), pad_t + plot_h, pts_c, scale_x(max(cur_df$elapsed_min)), pad_t + plot_h)
-  cur_svg <- sprintf(
-    "<polygon points='%s' fill='%s' opacity='0.10'/><polyline points='%s' fill='none' stroke='%s' stroke-width='2.2'/>",
-    poly_c, cur_color, pts_c, cur_color
-  )
+  # Current area + polyline + point markers (always shown for sparse/small runs)
+  cur_line_svg <- if (nrow(cur_df) > 1) {
+    pts_c <- paste(sprintf("%s,%s", scale_x(cur_x), scale_y(cur_df[[y_col]])), collapse = " ")
+    poly_c <- sprintf("%s,%d %s %s,%d", scale_x(min(cur_x)), pad_t + plot_h, pts_c, scale_x(max(cur_x)), pad_t + plot_h)
+    sprintf("<polygon points='%s' fill='%s' opacity='0.14'/><polyline points='%s' fill='none' stroke='%s' stroke-width='2.2'/>",
+            poly_c, cur_color, pts_c, cur_color)
+  } else ""
+  cur_pts_svg <- if (nrow(cur_df) <= 60) {
+    paste(sprintf(
+      "<circle cx='%s' cy='%s' r='3' fill='%s' stroke='%s' stroke-width='1'><title>%s%s: %s %s</title></circle>",
+      scale_x(cur_x), scale_y(cur_df[[y_col]]), cur_color, pt_stroke,
+      cur_x, x_unit, format(round(cur_df[[y_col]], 2), big.mark = ","), y_label
+    ), collapse = "")
+  } else ""
+  cur_svg <- paste0(cur_line_svg, cur_pts_svg)
 
   # Optional SLA reference line
   ref_svg <- ""
   if (!is.null(ref_val) && !is.na(ref_val) && ref_val > 0 && ref_val <= max_y) {
     ry <- scale_y(ref_val)
     ref_svg <- sprintf(
-      "<line x1='%d' y1='%s' x2='%d' y2='%s' stroke='#DC2626' stroke-width='1.3' stroke-dasharray='5,3'/><text x='%d' y='%s' text-anchor='end' fill='#DC2626' font-size='9.5' font-weight='700' font-family='Consolas,monospace'>%s</text>",
-      pad_l, ry, pad_l + plot_w, ry, pad_l + plot_w - 4, max(ry - 4, pad_t + 8), ifelse(is.null(ref_label), "SLA", ref_label)
+      "<line class='hd-sla-ref-line' x1='%d' y1='%s' x2='%d' y2='%s' stroke='%s' stroke-width='1.4' stroke-dasharray='5,3'/><text class='hd-sla-ref-label' x='%d' y='%s' text-anchor='end' fill='%s' font-size='9.5' font-weight='700' font-family='JetBrains Mono,Consolas,monospace'>%s</text>",
+      pad_l, ry, pad_l + plot_w, ry, ui_err_col, pad_l + plot_w - 4, max(ry - 4, pad_t + 8), ui_err_col, ifelse(is.null(ref_label), "SLA", ref_label)
     )
   }
 
@@ -1964,8 +2222,8 @@ build_svg_dual_line_chart <- function(cur_df, base_df, y_col, y_label, unit_str 
     "<svg viewBox='0 0 %d %d' style='width:100%%;height:auto;display:block;overflow:visible;'>
        %s
        %s
-       <line x1='%d' y1='%d' x2='%d' y2='%d' stroke='#CBD5E1' stroke-width='1'/>
-       <line x1='%d' y1='%d' x2='%d' y2='%d' stroke='#CBD5E1' stroke-width='1'/>
+       <line x1='%d' y1='%d' x2='%d' y2='%d' stroke='%s' stroke-width='1'/>
+       <line x1='%d' y1='%d' x2='%d' y2='%d' stroke='%s' stroke-width='1'/>
        %s
        %s
        %s
@@ -1974,8 +2232,8 @@ build_svg_dual_line_chart <- function(cur_df, base_df, y_col, y_label, unit_str 
     svg_w, svg_h,
     grid_svg,
     sec_svg,
-    pad_l, pad_t, pad_l, pad_t + plot_h,
-    pad_l, pad_t + plot_h, pad_l + plot_w, pad_t + plot_h,
+    pad_l, pad_t, pad_l, pad_t + plot_h, axis_stroke,
+    pad_l, pad_t + plot_h, pad_l + plot_w, pad_t + plot_h, axis_stroke,
     x_svg,
     base_svg,
     cur_svg,
@@ -2010,7 +2268,7 @@ chart1_panels[["ALL"]] <- sprintf(
   '<div class="hd-chart-app-panel hd-chart-app-ALL">%s</div>',
   build_svg_dual_line_chart(
     cur_df = ts_cur_all, base_df = ts_base_all, y_col = "pct_rt", y_label = "ms",
-    cur_color = "#0F172A", base_color = "#64748B",
+    cur_color = ui_cyan_col, base_color = ui_text_muted,
     ref_val = rt_default, ref_label = paste0("SLA: ", format(round(rt_default), big.mark = ","), " ms")
   )
 )
@@ -2020,7 +2278,7 @@ chart2_panels[["ALL"]] <- sprintf(
   '<div class="hd-chart-app-panel hd-chart-app-ALL">%s</div>',
   build_svg_dual_line_chart(
     cur_df = ts_cur_all, base_df = ts_base_all, y_col = "tps", y_label = "TPS",
-    cur_color = "#16A34A", base_color = "#64748B",
+    cur_color = ui_pass_col, base_color = ui_text_muted,
     sec_col = "active_users", sec_label = "Active VUs"
   )
 )
@@ -2030,7 +2288,7 @@ chart4_err_panels[["ALL"]] <- sprintf(
   '<div class="hd-chart-app-panel hd-chart-app-ALL">%s</div>',
   build_svg_dual_line_chart(
     cur_df = ts_cur_all, base_df = ts_base_all, y_col = "failed_tx", y_label = "Errors",
-    cur_color = "#DC2626", base_color = "#64748B",
+    cur_color = ui_err_col, base_color = ui_text_muted,
     svg_w = 520, svg_h = 115
   )
 )
@@ -2046,7 +2304,7 @@ for (app in unique_charts_apps) {
     safe_id,
     build_svg_dual_line_chart(
       cur_df = app_ts_cur, base_df = app_ts_base, y_col = "pct_rt", y_label = "ms",
-      cur_color = "#0F172A", base_color = "#64748B",
+      cur_color = ui_cyan_col, base_color = ui_text_muted,
       ref_val = app_rt_sla, ref_label = paste0("SLA: ", format(round(app_rt_sla), big.mark = ","), " ms")
     )
   )
@@ -2056,7 +2314,7 @@ for (app in unique_charts_apps) {
     safe_id,
     build_svg_dual_line_chart(
       cur_df = app_ts_cur, base_df = app_ts_base, y_col = "tps", y_label = "TPS",
-      cur_color = "#16A34A", base_color = "#64748B",
+      cur_color = ui_pass_col, base_color = ui_text_muted,
       sec_col = "active_users", sec_label = "Active VUs"
     )
   )
@@ -2066,7 +2324,7 @@ for (app in unique_charts_apps) {
     safe_id,
     build_svg_dual_line_chart(
       cur_df = app_ts_cur, base_df = app_ts_base, y_col = "failed_tx", y_label = "Errors",
-      cur_color = "#DC2626", base_color = "#64748B",
+      cur_color = ui_err_col, base_color = ui_text_muted,
       svg_w = 520, svg_h = 115
     )
   )
@@ -2075,16 +2333,19 @@ for (app in unique_charts_apps) {
 chart1_card_html <- sprintf(
   '<div class="hd-chart-card">
      <div class="hd-chart-card-header">
-       <h4 class="hd-chart-card-title">%s %s Response Time Timeline (1-Min Intervals)</h4>
+       <h4 class="hd-chart-card-title">%s %s Response Time Timeline (%s)</h4>
        <div class="hd-chart-legend">
-         <span><span class="hd-legend-line" style="background:#0F172A;"></span>Current (#%s)</span>
-         <span><span class="hd-legend-line" style="background:#64748B;border-top:2px dashed #64748B;height:0;"></span>Baseline (#%s)</span>
-         <span style="color:#DC2626;"><span class="hd-legend-line" style="background:#DC2626;"></span>SLA</span>
+         <span><span class="hd-legend-line" style="background:%s;"></span>Current (#%s)</span>
+         <span><span class="hd-legend-line" style="background:%s;border-top:2px dashed %s;height:0;"></span>Baseline (#%s)</span>
+         <span style="color:%s;"><span class="hd-legend-line" style="background:%s;"></span>SLA</span>
+         <button type="button" class="hd-chart-copy-btn" onclick="copyChartImage(this)" title="Copy chart as PNG image">Copy Image</button>
        </div>
      </div>
      %s
    </div>',
-  render_svg_icon("timer", 12), rt_metric_name, current_run_id, baseline_run_id, paste(unlist(chart1_panels), collapse = "\n")
+  render_svg_icon("timer", 12), rt_metric_name, ts_interval_label,
+  ui_cyan_col, current_run_id, ui_text_muted, ui_text_muted, baseline_run_id,
+  ui_err_col, ui_err_col, paste(unlist(chart1_panels), collapse = "\n")
 )
 
 chart2_card_html <- sprintf(
@@ -2095,6 +2356,7 @@ chart2_card_html <- sprintf(
          <span><span class="hd-legend-line" style="background:#16A34A;"></span>Current (#%s)</span>
          <span><span class="hd-legend-line" style="background:#64748B;border-top:2px dashed #64748B;height:0;"></span>Baseline (#%s)</span>
          <span style="color:#6366F1;"><span class="hd-legend-dot" style="background:#C7D2FE;"></span>Active VUs</span>
+         <button type="button" class="hd-chart-copy-btn" onclick="copyChartImage(this)" title="Copy chart as PNG image">Copy Image</button>
        </div>
      </div>
      %s
@@ -2433,6 +2695,7 @@ chart4_card_html <- sprintf(
        <div class="hd-chart-legend">
          <span><span class="hd-legend-line" style="background:#DC2626;"></span>Current (#%s)</span>
          <span><span class="hd-legend-line" style="background:#64748B;border-top:2px dashed #64748B;height:0;"></span>Baseline (#%s)</span>
+         <button type="button" class="hd-chart-copy-btn" onclick="copyChartImage(this)" title="Copy chart as PNG image">Copy Image</button>
        </div>
      </div>
      %s
@@ -2483,6 +2746,13 @@ render_apdex_panel <- function(target_app = "ALL") {
 
   # Helper for Apdex rating label and colors
   get_apdex_rating <- function(score) {
+    if (is_cyber_slate) {
+      if (score >= 0.94) return(list(rating = "Excellent", color = "#34D399", bg = "rgba(16,185,129,0.16)"))
+      if (score >= 0.85) return(list(rating = "Good", color = "#22D3EE", bg = "rgba(6,182,212,0.16)"))
+      if (score >= 0.70) return(list(rating = "Fair", color = "#FBBF24", bg = "rgba(245,158,11,0.16)"))
+      if (score >= 0.50) return(list(rating = "Poor", color = "#FB923C", bg = "rgba(249,115,22,0.16)"))
+      return(list(rating = "Unacceptable", color = "#FCA5A5", bg = "rgba(239,68,68,0.18)"))
+    }
     if (score >= 0.94) return(list(rating = "Excellent", color = "#16A34A", bg = "#DCFCE7"))
     if (score >= 0.85) return(list(rating = "Good", color = "#2563EB", bg = "#DBEAFE"))
     if (score >= 0.70) return(list(rating = "Fair", color = "#D97706", bg = "#FEF3C7"))
@@ -2564,8 +2834,19 @@ render_apdex_panel <- function(target_app = "ALL") {
             base_score, base_rate$rating, inline_delta_badge(cur_score, base_score, lower_is_better = FALSE))
   } else ""
 
+  apdex_meta_json <- htmlEscape(jsonlite::toJSON(list(
+    cur_score = cur_score, cur_rating = cur_rate$rating, cur_tot = cur_tot,
+    cur_sat = cur_sat, cur_sat_pct = cur_sat_pct,
+    cur_tol = cur_tol, cur_tol_pct = cur_tol_pct,
+    cur_fru = cur_fru, cur_fru_pct = cur_fru_pct,
+    base_tot = base_tot, base_score = base_score,
+    base_sat = base_sat, base_sat_pct = base_sat_pct,
+    base_tol = base_tol, base_tol_pct = base_tol_pct,
+    base_fru = base_fru, base_fru_pct = base_fru_pct
+  ), auto_unbox = TRUE))
+
   sprintf(
-    "<div style='padding-top:4px;'>
+    "<div class='hd-apdex-panel' data-apdex='%s' style='padding-top:4px;'>
        <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:6px;'>
          <div style='display:flex;align-items:center;'>
            %s
@@ -2598,6 +2879,7 @@ render_apdex_panel <- function(target_app = "ALL") {
          </div>
        </div>
      </div>",
+    apdex_meta_json,
     score_badge_html, base_comp_html,
     format(cur_tot, big.mark = ","),
     cur_stack_html, format(cur_tot, big.mark = ","),
@@ -2633,6 +2915,7 @@ chart5_dist_card_html <- sprintf(
          <span><span class="hd-legend-dot" style="background:#16A34A;"></span>Satisfied (&le; T)</span>
          <span><span class="hd-legend-dot" style="background:#D97706;"></span>Tolerating (T to 4T)</span>
          <span style="color:#DC2626;"><span class="hd-legend-dot" style="background:#DC2626;"></span>Frustrated (&gt; 4T / Error)</span>
+         <button type="button" class="hd-chart-copy-btn" onclick="copyChartImage(this)" title="Copy chart as PNG image">Copy Image</button>
        </div>
      </div>
      %s
@@ -3042,15 +3325,17 @@ render_modal_error_table <- function(df) {
   }
   rows <- sapply(seq_len(nrow(df)), function(i) {
     r <- df[i, ]
-    url_html <- if (!is.na(r$URL) && nzchar(r$URL) && r$URL != "null") {
-      sprintf("<div style='font-size:10px;color:#64748B;font-family:monospace;word-break:break-all;margin-top:2px;' title='%s'>%s</div>", 
-              htmlEscape(r$URL), htmlEscape(r$URL))
+    url_val <- if ("URL" %in% names(r) && length(r$URL) == 1 && !is.na(r$URL)) trimws(as.character(r$URL)) else ""
+    url_html <- if (nzchar(url_val) && tolower(url_val) != "null") {
+      sprintf("<div style='font-size:10px;color:#64748B;font-family:monospace;word-break:break-all;margin-top:2px;' title='%s'>%s</div>",
+              htmlEscape(url_val), htmlEscape(url_val))
     } else ""
-    
+
     err_detail <- htmlEscape(r$error_msg_clean)
-    if (!is.na(r$failureMessage) && nzchar(trimws(r$failureMessage))) {
-      err_detail <- sprintf("%s<div style='font-size:10px;color:#DC2626;margin-top:2px;'>%s</div>", 
-                            err_detail, htmlEscape(trimws(r$failureMessage)))
+    fm_val <- if ("failureMessage" %in% names(r) && length(r$failureMessage) == 1 && !is.na(r$failureMessage)) trimws(as.character(r$failureMessage)) else ""
+    if (nzchar(fm_val)) {
+      err_detail <- sprintf("%s<div style='font-size:10px;color:#DC2626;margin-top:2px;'>%s</div>",
+                            err_detail, htmlEscape(fm_val))
     }
 
     sprintf(
@@ -3427,7 +3712,7 @@ build_mode_tab_state <- function(mode, tab_ids) {
   })
   css_rules <- sapply(tab_ids, function(tid) {
     paste0(
-      sprintf('#hd-tab-%s-%s:checked ~ .hd-viewport label[for="hd-tab-%s-%s"] { background:#0A0A0A !important; color:#FFFFFF !important; border-color:#0A0A0A !important; }\n', mode, tid, mode, tid),
+      sprintf('#hd-tab-%s-%s:checked ~ .hd-viewport label[for="hd-tab-%s-%s"] { background:%s !important; color:%s !important; border-color:%s !important; }\n', mode, tid, mode, tid, ui_active_bg, ui_active_fg, ui_active_bg),
       sprintf('#hd-tab-%s-%s:checked ~ .hd-viewport #%s-data-%s { display:block !important; }', mode, tid, mode, tid)
     )
   })
@@ -3461,7 +3746,7 @@ scen_drill_css <- paste(
     paste0(
       sprintf('#hd-scen-drill-%s:checked ~ .hd-viewport #hd-scen-tx-modal-backdrop { display:flex !important; }\n', sid),
       sprintf('#hd-scen-drill-%s:checked ~ .hd-viewport #scen-tx-panel-%s { display:block !important; }\n', sid, sid),
-      sprintf('#hd-scen-drill-%s:checked ~ .hd-viewport label.hd-scen-pill[for="hd-scen-drill-%s"] { background:#0A0A0A !important; color:#FFFFFF !important; border-color:#0A0A0A !important; }', sid, sid)
+      sprintf('#hd-scen-drill-%s:checked ~ .hd-viewport label.hd-scen-pill[for="hd-scen-drill-%s"] { background:%s !important; color:%s !important; border-color:%s !important; }', sid, sid, ui_active_bg, ui_active_fg, ui_active_bg)
     )
   }),
   collapse = "\n"
@@ -3489,11 +3774,11 @@ st_scen_app_inputs <- paste(sapply(seq_along(scen_app_ids), function(idx) {
 }), collapse = "\n")
 
 st_scen_app_css <- paste(c(
-  '#hd-scen-app-ALL:checked ~ .hd-viewport label[for="hd-scen-app-ALL"] { background:#0A0A0A !important; color:#FFFFFF !important; border-color:#0A0A0A !important; }',
+  sprintf('#hd-scen-app-ALL:checked ~ .hd-viewport label[for="hd-scen-app-ALL"] { background:%s !important; color:%s !important; border-color:%s !important; }', ui_active_bg, ui_active_fg, ui_active_bg),
   sapply(unique_scen_apps, function(app) {
     aid <- safe_dom_id(app)
     paste0(
-      sprintf('#hd-scen-app-%s:checked ~ .hd-viewport label[for="hd-scen-app-%s"] { background:#0A0A0A !important; color:#FFFFFF !important; border-color:#0A0A0A !important; }\n', aid, aid),
+      sprintf('#hd-scen-app-%s:checked ~ .hd-viewport label[for="hd-scen-app-%s"] { background:%s !important; color:%s !important; border-color:%s !important; }\n', aid, aid, ui_active_bg, ui_active_fg, ui_active_bg),
       sprintf('#hd-scen-app-%s:checked ~ .hd-viewport .hd-scen-table-row:not(.hd-scen-row-app-%s) { display:none !important; }\n', aid, aid),
       sprintf('#hd-scen-app-%s:checked ~ .hd-viewport .hd-scen-col-app { display:none !important; }', aid)
     )
@@ -3508,12 +3793,12 @@ st_charts_app_inputs <- paste(sapply(seq_along(chart_app_ids), function(idx) {
 
 st_charts_app_css <- paste(c(
   '.hd-chart-app-panel { display: none; }',
-  '#hd-charts-app-ALL:checked ~ .hd-viewport label[for="hd-charts-app-ALL"] { background:#0A0A0A !important; color:#FFFFFF !important; border-color:#0A0A0A !important; }',
+  sprintf('#hd-charts-app-ALL:checked ~ .hd-viewport label[for="hd-charts-app-ALL"] { background:%s !important; color:%s !important; border-color:%s !important; }', ui_active_bg, ui_active_fg, ui_active_bg),
   '#hd-charts-app-ALL:checked ~ .hd-viewport .hd-chart-app-panel.hd-chart-app-ALL { display:block !important; }',
   sapply(unique_charts_apps, function(app) {
     aid <- safe_dom_id(app)
     paste0(
-      sprintf('#hd-charts-app-%s:checked ~ .hd-viewport label[for="hd-charts-app-%s"] { background:#0A0A0A !important; color:#FFFFFF !important; border-color:#0A0A0A !important; }\n', aid, aid),
+      sprintf('#hd-charts-app-%s:checked ~ .hd-viewport label[for="hd-charts-app-%s"] { background:%s !important; color:%s !important; border-color:%s !important; }\n', aid, aid, ui_active_bg, ui_active_fg, ui_active_bg),
       sprintf('#hd-charts-app-%s:checked ~ .hd-viewport .hd-chart-app-panel.hd-chart-app-%s { display:block !important; }\n', aid, aid),
       sprintf('#hd-charts-app-%s:checked ~ .hd-viewport .hd-scen-stack-row:not(.hd-chart-scen-app-%s) { display:none !important; }\n', aid, aid),
       sprintf('#hd-charts-app-%s:checked ~ .hd-viewport .hd-scen-pill:not(.hd-chart-scen-app-%s) { display:none !important; }', aid, aid)
@@ -3698,6 +3983,190 @@ modal_html <- paste0(
     }
     var closedRadio = document.getElementById("hd-mode-closed");
     if (closedRadio) closedRadio.checked = true;
+  };
+
+  function exportCanvasPng(canvas, titleText, btn) {
+    var origText = btn.textContent;
+    function flashBtn(label) {
+      btn.textContent = label;
+      btn.classList.add("copied");
+      setTimeout(function() {
+        btn.textContent = origText;
+        btn.classList.remove("copied");
+      }, 1800);
+    }
+    canvas.toBlob(function(pngBlob) {
+      if (!pngBlob) return;
+      if (navigator.clipboard && window.ClipboardItem) {
+        try {
+          navigator.clipboard.write([new ClipboardItem({ "image/png": pngBlob })])
+            .then(function() { flashBtn("Copied!"); })
+            .catch(function() { triggerPngDownload(pngBlob, titleText, flashBtn); });
+          return;
+        } catch (err) {}
+      }
+      triggerPngDownload(pngBlob, titleText, flashBtn);
+    }, "image/png");
+  }
+
+  function triggerPngDownload(pngBlob, titleText, flashBtn) {
+    var a = document.createElement("a");
+    var url = URL.createObjectURL(pngBlob);
+    a.href = url;
+    a.download = (titleText || "chart").replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "").toLowerCase() + ".png";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+    flashBtn("Saved PNG");
+  }
+
+  function renderApdexCanvas(d, titleText, btn) {
+    var isDark = !!window.__PERF_DELTA_CYBER_SLATE__;
+    var cBg      = isDark ? "#0B0F19" : "#FFFFFF";
+    var cText    = isDark ? "#F9FAFB" : "#0F172A";
+    var cBody    = isDark ? "#D1D5DB" : "#1E293B";
+    var cMuted   = isDark ? "#9CA3AF" : "#64748B";
+    var cBorder  = isDark ? "#1F2937" : "#E2E8F0";
+    var cSubtle  = isDark ? "#111827" : "#F1F5F9";
+    var cPass    = isDark ? "#10B981" : "#16A34A";
+    var cWarn    = isDark ? "#F59E0B" : "#D97706";
+    var cErr     = isDark ? "#EF4444" : "#DC2626";
+
+    var scale = 2, w = 540, h = d.base_tot > 0 ? 225 : 195;
+    var canvas = document.createElement("canvas");
+    canvas.width = w * scale;
+    canvas.height = h * scale;
+    var ctx = canvas.getContext("2d");
+    ctx.scale(scale, scale);
+    ctx.fillStyle = cBg;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.fillStyle = cText;
+    ctx.font = "bold 13px Inter, sans-serif";
+    ctx.fillText(titleText, 16, 24);
+
+    ctx.fillStyle = cBorder;
+    ctx.fillRect(16, 32, w - 32, 1);
+
+    // Score badge
+    var badgeTxt = "Apdex " + Number(d.cur_score).toFixed(2) + " (" + d.cur_rating + ")";
+    ctx.fillStyle = cSubtle;
+    ctx.fillRect(16, 42, 175, 22);
+    ctx.fillStyle = cText;
+    ctx.font = "bold 11px JetBrains Mono, Consolas, monospace";
+    ctx.fillText(badgeTxt, 24, 57);
+
+    ctx.fillStyle = cMuted;
+    ctx.font = "11px Inter, sans-serif";
+    ctx.textAlign = "right";
+    ctx.fillText("Total Samples: " + Number(d.cur_tot).toLocaleString(), w - 16, 57);
+    ctx.textAlign = "left";
+
+    function drawStackedBar(y, label, satPct, tolPct, fruPct, tot) {
+      ctx.fillStyle = cText;
+      ctx.font = "bold 10.5px Inter, sans-serif";
+      ctx.fillText(label, 16, y + 13);
+      var bx = 76, bw = w - 156, bh = 18;
+      var w1 = (satPct / 100) * bw, w2 = (tolPct / 100) * bw, w3 = Math.max(0, bw - w1 - w2);
+      ctx.fillStyle = cPass; ctx.fillRect(bx, y, w1, bh);
+      ctx.fillStyle = cWarn; ctx.fillRect(bx + w1, y, w2, bh);
+      ctx.fillStyle = cErr; ctx.fillRect(bx + w1 + w2, y, w3, bh);
+      ctx.fillStyle = cText;
+      ctx.font = "bold 10.5px JetBrains Mono, Consolas, monospace";
+      ctx.textAlign = "right";
+      ctx.fillText(Number(tot).toLocaleString() + " tx", w - 16, y + 13);
+      ctx.textAlign = "left";
+    }
+
+    drawStackedBar(74, "Current", d.cur_sat_pct, d.cur_tol_pct, d.cur_fru_pct, d.cur_tot);
+    var rowY = 108;
+    if (d.base_tot > 0) {
+      drawStackedBar(98, "Baseline", d.base_sat_pct, d.base_tol_pct, d.base_fru_pct, d.base_tot);
+      rowY = 132;
+    }
+
+    var tiers = [
+      { color: cPass, name: "Satisfied (" + String.fromCharCode(8804) + " T)", pct: d.cur_sat_pct, cnt: d.cur_sat },
+      { color: cWarn, name: "Tolerating (T to 4T)", pct: d.cur_tol_pct, cnt: d.cur_tol },
+      { color: cErr, name: "Frustrated (> 4T / Error)", pct: d.cur_fru_pct, cnt: d.cur_fru }
+    ];
+    tiers.forEach(function(t, idx) {
+      var y = rowY + idx * 24;
+      ctx.fillStyle = cBorder;
+      ctx.fillRect(16, y - 12, w - 32, 1);
+      ctx.fillStyle = t.color;
+      ctx.fillRect(16, y, 10, 10);
+      ctx.fillStyle = cBody;
+      ctx.font = "bold 11px Inter, sans-serif";
+      ctx.fillText(t.name, 32, y + 9);
+      ctx.fillStyle = cText;
+      ctx.font = "bold 11px JetBrains Mono, Consolas, monospace";
+      ctx.textAlign = "right";
+      ctx.fillText(t.pct + "% (" + Number(t.cnt).toLocaleString() + ")", w - 16, y + 9);
+      ctx.textAlign = "left";
+    });
+    exportCanvasPng(canvas, titleText, btn);
+  }
+
+  window.copyChartImage = function(btn) {
+    var card = btn.closest(".hd-chart-card");
+    if (!card) return;
+    var titleEl = card.querySelector(".hd-chart-card-title");
+    var titleText = titleEl ? titleEl.textContent.trim() : "Performance Chart";
+    var panels = card.querySelectorAll(".hd-chart-app-panel");
+    var activePanel = null;
+    for (var i = 0; i < panels.length; i++) {
+      if (window.getComputedStyle(panels[i]).display !== "none") {
+        activePanel = panels[i];
+        break;
+      }
+    }
+    if (!activePanel) activePanel = card;
+
+    var apdexEl = activePanel.querySelector(".hd-apdex-panel[data-apdex]");
+    if (apdexEl) {
+      try {
+        var apdexData = JSON.parse(apdexEl.getAttribute("data-apdex"));
+        renderApdexCanvas(apdexData, titleText, btn);
+        return;
+      } catch (e) {}
+    }
+
+    var svg = activePanel.querySelector("svg");
+    if (!svg) return;
+    var vb = (svg.getAttribute("viewBox") || "0 0 520 195").split(/[\\s,]+/);
+    var w = parseFloat(vb[2]) || 520;
+    var h = parseFloat(vb[3]) || 195;
+    var padTop = 30, scale = 2;
+
+    var cloned = svg.cloneNode(true);
+    cloned.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    cloned.setAttribute("width", w);
+    cloned.setAttribute("height", h);
+
+    var svgData = new XMLSerializer().serializeToString(cloned);
+    var svgBlob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+    var url = URL.createObjectURL(svgBlob);
+    var img = new Image();
+    img.onload = function() {
+      var isDark = !!window.__PERF_DELTA_CYBER_SLATE__;
+      var canvas = document.createElement("canvas");
+      canvas.width = w * scale;
+      canvas.height = (h + padTop) * scale;
+      var ctx = canvas.getContext("2d");
+      ctx.scale(scale, scale);
+      ctx.fillStyle = isDark ? "#0B0F19" : "#FFFFFF";
+      ctx.fillRect(0, 0, w, h + padTop);
+      ctx.fillStyle = isDark ? "#F9FAFB" : "#0F172A";
+      ctx.font = "bold 12px Inter, sans-serif";
+      ctx.fillText(titleText, 12, 20);
+      ctx.drawImage(img, 0, padTop, w, h);
+      URL.revokeObjectURL(url);
+      exportCanvasPng(canvas, titleText, btn);
+    };
+    img.onerror = function() { URL.revokeObjectURL(url); };
+    img.src = url;
   };
 
   // Delegated click handler for table rows and buttons with data-open-mode + data-open-tab

@@ -38,7 +38,7 @@ if (-not (Test-Path (Join-Path $UiDir "node_modules"))) {
 
 Write-Host ">>> [3/3] Starting Live DuckDB API (http://localhost:3001) + Cyber-Slate UI (http://localhost:5173)..." -ForegroundColor Green
 
-$apiProc = Start-Process -FilePath "node" -ArgumentList "server.js" -WorkingDirectory $ApiDir -PassThru -NoNewWindow
+$apiProc = Start-Process -FilePath "node" -ArgumentList "--watch", "server.js" -WorkingDirectory $ApiDir -PassThru -NoNewWindow
 
 Push-Location $UiDir
 try {

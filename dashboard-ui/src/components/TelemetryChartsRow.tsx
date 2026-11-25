@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
+import { Camera, Check } from 'lucide-react';
 import {
   Area,
   CartesianGrid,
@@ -12,10 +13,13 @@ import {
   YAxis,
 } from 'recharts';
 import { TelemetryPoint } from '../types/performance';
+import { copyChartContainerAsPng } from '../utils/chartExport';
 
 interface TelemetryChartsRowProps {
   data: TelemetryPoint[];
+  baselineData?: TelemetryPoint[];
   slaP95Ms: number;
+  theme?: 'dark' | 'light';
 }
 
 interface CustomTooltipProps {
@@ -84,12 +88,59 @@ const TelemetryTooltip: React.FC<CustomTooltipProps> = ({
 
 export const TelemetryChartsRow: React.FC<TelemetryChartsRowProps> = ({
   data,
+  baselineData,
   slaP95Ms,
+  theme = 'dark',
 }) => {
+  const isLight = theme === 'light';
+  const gridStroke = isLight ? '#E2E8F0' : '#1F2937';
+  const tickFill = isLight ? '#64748B' : '#9CA3AF';
+  const axisStroke = isLight ? '#CBD5E1' : '#6B7280';
+  const cursorStroke = isLight ? '#94A3B8' : '#4B5563';
+  const activeDotStroke = isLight ? '#FFFFFF' : '#0B0F19';
+  const hasBaseline = Boolean(baselineData && baselineData.length > 0);
+
+  const chartData = React.useMemo(() => {
+    if (!hasBaseline || !baselineData) return data;
+    return data.map((pt, idx) => {
+      const bIdx = Math.min(
+        Math.round((idx / Math.max(data.length - 1, 1)) * Math.max(baselineData.length - 1, 1)),
+        baselineData.length - 1
+      );
+      const bPt = baselineData[bIdx];
+      return {
+        ...pt,
+        baseThroughput: bPt ? bPt.throughput : undefined,
+        baseP95: bPt ? bPt.p95 : undefined,
+      };
+    });
+  }, [data, baselineData, hasBaseline]);
+
+  const leftCardRef = useRef<HTMLDivElement>(null);
+  const rightCardRef = useRef<HTMLDivElement>(null);
+  const [leftCopy, setLeftCopy] = useState<'idle' | 'copied' | 'downloaded'>('idle');
+  const [rightCopy, setRightCopy] = useState<'idle' | 'copied' | 'downloaded'>('idle');
+
+  const handleCopyLeft = async () => {
+    const res = await copyChartContainerAsPng(leftCardRef.current, 'Concurrent VUs vs Throughput', theme);
+    if (res === 'copied' || res === 'downloaded') {
+      setLeftCopy(res);
+      window.setTimeout(() => setLeftCopy('idle'), 1800);
+    }
+  };
+
+  const handleCopyRight = async () => {
+    const res = await copyChartContainerAsPng(rightCardRef.current, 'Response Time Percentiles (ms)', theme);
+    if (res === 'copied' || res === 'downloaded') {
+      setRightCopy(res);
+      window.setTimeout(() => setRightCopy('idle'), 1800);
+    }
+  };
+
   return (
     <section className="grid grid-cols-1 gap-3 lg:grid-cols-2">
       {/* Left Chart: Concurrent VUs vs Throughput */}
-      <div className="rounded-lg border border-[#1F2937] bg-[#111827] p-3.5">
+      <div ref={leftCardRef} className="rounded-lg border border-[#1F2937] bg-[#111827] p-3.5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-xs font-semibold uppercase tracking-wider text-[#F9FAFB]">
@@ -108,13 +159,31 @@ export const TelemetryChartsRow: React.FC<TelemetryChartsRowProps> = ({
               <span className="h-2 w-2 rounded-full bg-[#6366F1]" />
               Throughput (req/s)
             </span>
+            <button
+              type="button"
+              onClick={handleCopyLeft}
+              className="no-print inline-flex items-center gap-1 rounded border border-[#1F2937] bg-[#0B0F19] px-2 py-1 text-[10px] font-medium text-[#9CA3AF] hover:border-[#06B6D4]/50 hover:text-[#22D3EE] transition-colors"
+              title="Copy chart as PNG image"
+            >
+              {leftCopy === 'idle' ? (
+                <>
+                  <Camera className="h-3 w-3" />
+                  PNG
+                </>
+              ) : (
+                <>
+                  <Check className="h-3 w-3 text-[#10B981]" />
+                  {leftCopy === 'copied' ? 'Copied' : 'Saved'}
+                </>
+              )}
+            </button>
           </div>
         </div>
 
         <div className="h-[270px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
-              data={data}
+              data={chartData}
               syncId="perf-telemetry"
               margin={{ top: 6, right: 8, left: -12, bottom: 0 }}
             >
@@ -124,18 +193,18 @@ export const TelemetryChartsRow: React.FC<TelemetryChartsRowProps> = ({
                   <stop offset="95%" stopColor="#06B6D4" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
-              <CartesianGrid stroke="#1F2937" strokeDasharray="3 3" vertical={false} />
+              <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" vertical={false} />
               <XAxis
                 dataKey="timestamp"
-                stroke="#6B7280"
-                tick={{ fill: '#9CA3AF', fontSize: 10, fontFamily: 'JetBrains Mono' }}
+                stroke={axisStroke}
+                tick={{ fill: tickFill, fontSize: 10, fontFamily: 'JetBrains Mono' }}
                 tickLine={false}
                 minTickGap={28}
               />
               <YAxis
                 yAxisId="left"
                 stroke="#06B6D4"
-                tick={{ fill: '#9CA3AF', fontSize: 10, fontFamily: 'JetBrains Mono' }}
+                tick={{ fill: tickFill, fontSize: 10, fontFamily: 'JetBrains Mono' }}
                 tickLine={false}
                 axisLine={false}
               />
@@ -143,12 +212,12 @@ export const TelemetryChartsRow: React.FC<TelemetryChartsRowProps> = ({
                 yAxisId="right"
                 orientation="right"
                 stroke="#6366F1"
-                tick={{ fill: '#9CA3AF', fontSize: 10, fontFamily: 'JetBrains Mono' }}
+                tick={{ fill: tickFill, fontSize: 10, fontFamily: 'JetBrains Mono' }}
                 tickLine={false}
                 axisLine={false}
               />
               <Tooltip
-                cursor={{ stroke: '#4B5563', strokeDasharray: '3 3' }}
+                cursor={{ stroke: cursorStroke, strokeDasharray: '3 3' }}
                 content={<TelemetryTooltip mode="load" />}
               />
               <Area
@@ -169,16 +238,29 @@ export const TelemetryChartsRow: React.FC<TelemetryChartsRowProps> = ({
                 stroke="#6366F1"
                 strokeWidth={2}
                 dot={false}
-                activeDot={{ r: 4, fill: '#6366F1', stroke: '#0B0F19', strokeWidth: 2 }}
+                activeDot={{ r: 4, fill: '#6366F1', stroke: activeDotStroke, strokeWidth: 2 }}
                 isAnimationActive={false}
               />
+              {hasBaseline && (
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="baseThroughput"
+                  name="Baseline Throughput"
+                  stroke="#9CA3AF"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 3"
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              )}
             </ComposedChart>
           </ResponsiveContainer>
         </div>
       </div>
 
       {/* Right Chart: Response Time Percentiles + SLA Threshold */}
-      <div className="rounded-lg border border-[#1F2937] bg-[#111827] p-3.5">
+      <div ref={rightCardRef} className="rounded-lg border border-[#1F2937] bg-[#111827] p-3.5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-xs font-semibold uppercase tracking-wider text-[#F9FAFB]">
@@ -205,32 +287,50 @@ export const TelemetryChartsRow: React.FC<TelemetryChartsRowProps> = ({
               <span className="h-2 w-2 rounded-full bg-[#EF4444]" />
               P99
             </span>
+            <button
+              type="button"
+              onClick={handleCopyRight}
+              className="no-print inline-flex items-center gap-1 rounded border border-[#1F2937] bg-[#0B0F19] px-2 py-1 text-[10px] font-medium text-[#9CA3AF] hover:border-[#06B6D4]/50 hover:text-[#22D3EE] transition-colors"
+              title="Copy chart as PNG image"
+            >
+              {rightCopy === 'idle' ? (
+                <>
+                  <Camera className="h-3 w-3" />
+                  PNG
+                </>
+              ) : (
+                <>
+                  <Check className="h-3 w-3 text-[#10B981]" />
+                  {rightCopy === 'copied' ? 'Copied' : 'Saved'}
+                </>
+              )}
+            </button>
           </div>
         </div>
 
         <div className="h-[270px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
-              data={data}
+              data={chartData}
               syncId="perf-telemetry"
               margin={{ top: 6, right: 8, left: -8, bottom: 0 }}
             >
-              <CartesianGrid stroke="#1F2937" strokeDasharray="3 3" vertical={false} />
+              <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" vertical={false} />
               <XAxis
                 dataKey="timestamp"
-                stroke="#6B7280"
-                tick={{ fill: '#9CA3AF', fontSize: 10, fontFamily: 'JetBrains Mono' }}
+                stroke={axisStroke}
+                tick={{ fill: tickFill, fontSize: 10, fontFamily: 'JetBrains Mono' }}
                 tickLine={false}
                 minTickGap={28}
               />
               <YAxis
-                stroke="#6B7280"
-                tick={{ fill: '#9CA3AF', fontSize: 10, fontFamily: 'JetBrains Mono' }}
+                stroke={axisStroke}
+                tick={{ fill: tickFill, fontSize: 10, fontFamily: 'JetBrains Mono' }}
                 tickLine={false}
                 axisLine={false}
               />
               <Tooltip
-                cursor={{ stroke: '#4B5563', strokeDasharray: '3 3' }}
+                cursor={{ stroke: cursorStroke, strokeDasharray: '3 3' }}
                 content={<TelemetryTooltip mode="latency" slaP95Ms={slaP95Ms} />}
               />
               <ReferenceLine
@@ -282,6 +382,18 @@ export const TelemetryChartsRow: React.FC<TelemetryChartsRowProps> = ({
                 dot={false}
                 isAnimationActive={false}
               />
+              {hasBaseline && (
+                <Line
+                  type="monotone"
+                  dataKey="baseP95"
+                  name="Baseline P95"
+                  stroke="#A855F7"
+                  strokeWidth={1.6}
+                  strokeDasharray="4 3"
+                  dot={false}
+                  isAnimationActive={false}
+                />
+              )}
             </LineChart>
           </ResponsiveContainer>
         </div>

@@ -4,10 +4,58 @@ import { PerformanceTestRun, TelemetryPoint } from '../types/performance';
 
 interface KpiSummaryRowProps {
   run: PerformanceTestRun;
+  baselineRun?: PerformanceTestRun | null;
   visibleSeries: TelemetryPoint[];
 }
 
-export const KpiSummaryRow: React.FC<KpiSummaryRowProps> = ({ run, visibleSeries }) => {
+function DeltaPill({
+  current,
+  baseline,
+  lowerIsBetter,
+}: {
+  current: number;
+  baseline?: number;
+  lowerIsBetter: boolean;
+}) {
+  if (baseline === undefined || baseline === null || !Number.isFinite(baseline)) return null;
+  if (baseline === 0 && current === 0) {
+    return (
+      <span className="inline-flex items-center rounded border border-[#9CA3AF]/30 bg-[#9CA3AF]/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#9CA3AF] metric-num">
+        0.0%
+      </span>
+    );
+  }
+  const pct = baseline === 0 ? 100 : ((current - baseline) / Math.abs(baseline)) * 100;
+  const absPct = Math.abs(pct);
+  const isNeutral = absPct < 0.5;
+  const isGood = lowerIsBetter ? pct < 0 : pct > 0;
+  const arrow = isNeutral ? '•' : pct > 0 ? '▲' : '▼';
+  const sign = pct > 0 ? '+' : '';
+  const cls = isNeutral
+    ? 'border-[#9CA3AF]/30 bg-[#9CA3AF]/10 text-[#9CA3AF]'
+    : isGood
+    ? 'border-[#10B981]/35 bg-[#10B981]/15 text-[#10B981]'
+    : 'border-[#EF4444]/35 bg-[#EF4444]/15 text-[#EF4444]';
+
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 text-[10px] font-semibold metric-num ${cls}`}
+      title={`Baseline: ${baseline.toLocaleString()}`}
+    >
+      <span>{arrow}</span>
+      <span>
+        {sign}
+        {pct.toFixed(1)}%
+      </span>
+    </span>
+  );
+}
+
+export const KpiSummaryRow: React.FC<KpiSummaryRowProps> = ({
+  run,
+  baselineRun,
+  visibleSeries,
+}) => {
   const peakVUs =
     visibleSeries.length > 0
       ? Math.max(...visibleSeries.map((p) => p.vus))
@@ -32,9 +80,12 @@ export const KpiSummaryRow: React.FC<KpiSummaryRowProps> = ({ run, visibleSeries
         )
       : run.summary.errorRatePct;
 
-  const p95Breached = avgP95 > run.sla.p95Ms;
-  const p95Warn = !p95Breached && avgP95 > run.sla.p95Ms * 0.85;
-  const errorBreached = avgErrorRate > run.sla.errorRatePct;
+  const rtEnabled = run.sla.rtEnabled !== false;
+  const errEnabled = run.sla.errorEnabled !== false;
+
+  const p95Breached = rtEnabled && avgP95 > run.sla.p95Ms;
+  const p95Warn = rtEnabled && !p95Breached && avgP95 > run.sla.p95Ms * 0.85;
+  const errorBreached = errEnabled && avgErrorRate > run.sla.errorRatePct;
 
   const tpm = Math.round(avgThroughput * 60);
 
@@ -48,11 +99,20 @@ export const KpiSummaryRow: React.FC<KpiSummaryRowProps> = ({ run, visibleSeries
           </span>
           <Users className="h-4 w-4 text-[#06B6D4]" />
         </div>
-        <div className="mt-2 flex items-baseline gap-2">
-          <span className="metric-num text-2xl font-bold text-[#F9FAFB]">
-            {peakVUs.toLocaleString()}
-          </span>
-          <span className="metric-num text-xs text-[#06B6D4]">VUs</span>
+        <div className="mt-2 flex items-baseline justify-between gap-2">
+          <div className="flex items-baseline gap-2">
+            <span className="metric-num text-2xl font-bold text-[#F9FAFB]">
+              {peakVUs.toLocaleString()}
+            </span>
+            <span className="metric-num text-xs text-[#06B6D4]">VUs</span>
+          </div>
+          {baselineRun && (
+            <DeltaPill
+              current={peakVUs}
+              baseline={baselineRun.summary.peakVUs}
+              lowerIsBetter={false}
+            />
+          )}
         </div>
         <div className="mt-2 flex items-center justify-between border-t border-[#1F2937]/80 pt-2 text-[11px] text-[#9CA3AF]">
           <span>Total Requests</span>
@@ -70,14 +130,23 @@ export const KpiSummaryRow: React.FC<KpiSummaryRowProps> = ({ run, visibleSeries
           </span>
           <Gauge className="h-4 w-4 text-[#6366F1]" />
         </div>
-        <div className="mt-2 flex items-baseline gap-2">
-          <span className="metric-num text-2xl font-bold text-[#F9FAFB]">
-            {avgThroughput.toLocaleString(undefined, {
-              minimumFractionDigits: 1,
-              maximumFractionDigits: 1,
-            })}
-          </span>
-          <span className="metric-num text-xs text-[#818CF8]">req/s</span>
+        <div className="mt-2 flex items-baseline justify-between gap-2">
+          <div className="flex items-baseline gap-2">
+            <span className="metric-num text-2xl font-bold text-[#F9FAFB]">
+              {avgThroughput.toLocaleString(undefined, {
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 1,
+              })}
+            </span>
+            <span className="metric-num text-xs text-[#818CF8]">req/s</span>
+          </div>
+          {baselineRun && (
+            <DeltaPill
+              current={avgThroughput}
+              baseline={baselineRun.summary.avgThroughputRps}
+              lowerIsBetter={false}
+            />
+          )}
         </div>
         <div className="mt-2 flex items-center justify-between border-t border-[#1F2937]/80 pt-2 text-[11px] text-[#9CA3AF]">
           <span>Transactions / Min</span>
@@ -93,7 +162,7 @@ export const KpiSummaryRow: React.FC<KpiSummaryRowProps> = ({ run, visibleSeries
       >
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-medium uppercase tracking-wider text-[#9CA3AF]">
-            P95 Response Time
+            {run.sla.rtMetric === 'p90' ? 'P90' : 'P95'} Response Time
           </span>
           <Timer
             className={`h-4 w-4 ${
@@ -120,31 +189,42 @@ export const KpiSummaryRow: React.FC<KpiSummaryRowProps> = ({ run, visibleSeries
             </span>
             <span className="metric-num text-xs text-[#9CA3AF]">ms</span>
           </div>
-          <span
-            className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase metric-num ${
-              p95Breached
-                ? 'bg-[#EF4444]/15 text-[#EF4444] border border-[#EF4444]/30'
-                : p95Warn
-                ? 'bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/30'
-                : 'bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30'
-            }`}
-          >
-            {p95Breached ? (
-              <>
-                <AlertTriangle className="h-3 w-3" />
-                SLA BREACH
-              </>
-            ) : p95Warn ? (
-              'NEAR SLA'
-            ) : (
-              'WITHIN SLA'
+          <div className="flex items-center gap-1.5">
+            {baselineRun && (
+              <DeltaPill
+                current={avgP95}
+                baseline={baselineRun.summary.p95ResponseTimeMs}
+                lowerIsBetter={true}
+              />
             )}
-          </span>
+            {rtEnabled && (
+              <span
+                className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase metric-num ${
+                  p95Breached
+                    ? 'bg-[#EF4444]/15 text-[#EF4444] border border-[#EF4444]/30'
+                    : p95Warn
+                    ? 'bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/30'
+                    : 'bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30'
+                }`}
+              >
+                {p95Breached ? (
+                  <>
+                    <AlertTriangle className="h-3 w-3" />
+                    BREACH
+                  </>
+                ) : p95Warn ? (
+                  'NEAR SLA'
+                ) : (
+                  'PASS'
+                )}
+              </span>
+            )}
+          </div>
         </div>
         <div className="mt-2 flex items-center justify-between border-t border-[#1F2937]/80 pt-2 text-[11px] text-[#9CA3AF]">
           <span>SLA Threshold</span>
           <span className="metric-num text-[#F9FAFB]">
-            &le; {run.sla.p95Ms.toLocaleString()} ms
+            {rtEnabled ? `≤ ${run.sla.p95Ms.toLocaleString()} ms` : 'SLA: Disabled'}
           </span>
         </div>
       </div>
@@ -176,20 +256,32 @@ export const KpiSummaryRow: React.FC<KpiSummaryRowProps> = ({ run, visibleSeries
             </span>
             <span className="metric-num text-xs text-[#9CA3AF]">%</span>
           </div>
-          <span
-            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide metric-num ${
-              errorBreached
-                ? 'bg-[#EF4444]/15 text-[#EF4444] border border-[#EF4444]/40'
-                : 'bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/40'
-            }`}
-          >
-            {errorBreached ? 'FAIL' : 'PASS'}
-          </span>
+          <div className="flex items-center gap-1.5">
+            {baselineRun && (
+              <DeltaPill
+                current={avgErrorRate}
+                baseline={baselineRun.summary.errorRatePct}
+                lowerIsBetter={true}
+              />
+            )}
+            {errEnabled && (
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide metric-num ${
+                  errorBreached
+                    ? 'bg-[#EF4444]/15 text-[#EF4444] border border-[#EF4444]/40'
+                    : 'bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/40'
+                }`}
+              >
+                {errorBreached ? 'FAIL' : 'PASS'}
+              </span>
+            )}
+          </div>
         </div>
         <div className="mt-2 flex items-center justify-between border-t border-[#1F2937]/80 pt-2 text-[11px] text-[#9CA3AF]">
           <span>Failed / SLA Limit</span>
           <span className="metric-num text-[#F9FAFB]">
-            {run.summary.failedRequests.toLocaleString()} (&le; {run.sla.errorRatePct}%)
+            {run.summary.failedRequests.toLocaleString()}{' '}
+            {errEnabled ? `(≤ ${run.sla.errorRatePct}%)` : '(SLA: Disabled)'}
           </span>
         </div>
       </div>

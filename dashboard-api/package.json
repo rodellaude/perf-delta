@@ -8,7 +8,7 @@
     "dev": "node --watch server.js"
   },
   "dependencies": {
-    "@duckdb/node-api": "^1.2.1-alpha.17",
+    "@duckdb/node-api": "^2.0.1-r.1",
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "js-yaml": "^4.1.0"

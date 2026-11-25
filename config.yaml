@@ -15,6 +15,11 @@ database_path: "Data/Performance_Vault.db" # Update if needed e.g. //<host>/shar
 sla_file_path: "SLA/performance-sla.yaml" # Update if needed
 evidence_dir: "Evidence" # Optional folder for manual CPU/Memory screenshots per run (e.g. Evidence/100002/*.png)
 ai_summary_enabled: "false"
+# Supports either Amplify or Google Gemini (auto-detected from ai_url):
+#   Gemini example:
+#     ai_url: "https://generativelanguage.googleapis.com/v1beta/models"
+#     ai_model_id: "gemini-2.5-flash"
+#     (uses gemini_api_key in secrets.yaml or GEMINI_API_KEY env var)
 ai_url: "https://amplify.planittesting.com/external/api/completion"
 ai_model_id: "19b89d52-23cf-463d-a5bb-c2896a0f8661"
 
@@ -34,26 +39,26 @@ workload_profile:
   ramp_down: ""    # Optional override: e.g. "5-minute ramp-down (300s)"
 
 # Executive AI Summary Prompt Template
-# Supports variables: {app_names}, {env}, {test_type}, {vu_actual}, {duration_desc},
+# Supports variables: {app_names}, {env}, {test_type}, {run_date}, {vu_actual}, {duration_desc},
 #                     {ramp_up}, {steady_state}, {ramp_down}, {throughput}, {error_rate},
 #                     {latency}, {current_rt}, {rt_metric}, {baseline_run_id},
 #                     {baseline_comp}, {overall_status}, {breach_cnt}, {worst_label},
-#                     {worst_rt}, {worst_sla}, {flow_theme}
+#                     {worst_rt}, {worst_sla}, {flow_theme}, {journey_breakdown},
+#                     {error_breakdown}
 ai_prompt_template: |
   Write a clear, natural executive summary of this performance test for project stakeholders.
 
   Writing Style:
   - Use plain, natural British English (e.g. optimised, prioritised, analysed, behaviour).
-  - Write the way an experienced performance engineer speaks to a delivery team: clear, conversational, and easy to read.
-  - Avoid stiff corporate jargon, robotic phrasing, or disconnected sentence fragments. Write in complete, natural sentences.
-  - Bold important numbers, transaction names, and outcomes inline (e.g. **289 virtual users**, **14.61 TPS**, **0.00% error rate**, **1,286 ms**, **FAIL**).
+  - Write the way an experienced performance engineer speaks to a delivery team: clear, concise, and easy to read.
+  - Bold important numbers, journey names, transaction names, and outcomes inline (e.g. **289 virtual users**, **2.31 TPS**, **0.03% error rate**, **1,960 ms**).
   - If Ramp-down is "none" or empty, simply do not mention ramp-down at all (never write "without ramp-down").
-  - Keep each paragraph to 2–3 clear sentences.
-  - Output exactly two paragraphs followed by "Next steps:" and three plain-English bullet points (do NOT put bracketed tags like [Root cause] or [Remediation] at the start of bullets).
+  - Do NOT invent metrics, journeys, or errors not present in the data below.
 
   Test Results:
   Application : {app_names} ({env})
   Test Type   : {test_type}
+  Run Date    : {run_date}
   Workload    : {vu_actual} virtual users ({duration_desc})
   Throughput  : {throughput} TPS
   Error Rate  : {error_rate}%
@@ -62,11 +67,23 @@ ai_prompt_template: |
   Breaches    : {breach_cnt} ({rt_metric}) — slowest transaction: {worst_label} at {worst_rt} ms vs {worst_sla} ms target
   Main Flows  : {flow_theme}
 
-  Structure:
-  PARAGRAPH 1: Explain how the test ran—how many virtual users it handled, the ramp-up and steady-state profile, the average throughput and error rate, and how overall response time compared to the baseline run.
-  PARAGRAPH 2: Explain how transactions performed against the response time target, naming the slowest transaction if any exceeded the limit. State the overall outcome clearly and close with a helpful, practical recommendation on what to review before the next run.
+  User Journey Breakdown vs Baseline (#{baseline_run_id}):
+  {journey_breakdown}
+
+  Error Breakdown:
+  {error_breakdown}
+
+  Structure (follow this exact layout):
+  PARAGRAPH 1: One concise paragraph (2–3 sentences) summarising how the {test_type} on **{run_date}** ran—virtual users, ramp-up and steady-state profile, average throughput, error rate, and how overall **{rt_metric}** latency compared with baseline run **#{baseline_run_id}**.
+
+  Followed by a blank line and these concise bullets summarising the journey & error findings (omit a bullet only if empty, e.g. if no journeys were stable):
+  - **Improved:** List the user journeys that improved vs baseline from the User Journey Breakdown.
+  - **Broadly Stable:** List any user journeys that remained stable vs baseline.
+  - **Regressions & Slowest Outlier:** List any regressed journeys and note the slowest outlier **{worst_label}** at **{worst_rt} ms** ({rt_metric}).
+  - **Error Summary ({error_rate}% Error Rate):** Concisely summarise the failing transactions and root HTTP/connection errors from the Error Breakdown above (or state that **0 errors** occurred if none).
+
   Next steps:
-  - First bullet: Which slow transaction or area to investigate first (bold the transaction name).
+  - First bullet: Which slow journey, outlier transaction, or error to investigate first (bold the transaction/journey name).
   - Second bullet: What practical tuning or fix to look into.
   - Third bullet: Re-running the test under the same load to confirm the fix worked.
 

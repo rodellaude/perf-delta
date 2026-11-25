@@ -39,3 +39,103 @@
 .recharts-tooltip-wrapper {
   z-index: 30;
 }
+
+/* ============================================================================
+   LIGHT MODE THEME — Triggered by html[data-theme="light"]
+   ============================================================================ */
+html[data-theme="light"],
+html[data-theme="light"] body {
+  background-color: #F8FAFC !important;
+  color: #0F172A !important;
+}
+
+html[data-theme="light"] .bg-\[\#0B0F19\],
+html[data-theme="light"] .bg-\[\#0B0F19\]\/95 {
+  background-color: #F8FAFC !important;
+}
+
+html[data-theme="light"] .bg-\[\#111827\],
+html[data-theme="light"] .bg-\[\#111827\]\/70,
+html[data-theme="light"] .bg-\[\#111827\]\/80 {
+  background-color: #FFFFFF !important;
+}
+
+html[data-theme="light"] .bg-\[\#1F2937\],
+html[data-theme="light"] .hover\:bg-\[\#1F2937\]\/40:hover {
+  background-color: #F1F5F9 !important;
+}
+
+html[data-theme="light"] .border-\[\#1F2937\],
+html[data-theme="light"] .border-\[\#374151\],
+html[data-theme="light"] .divide-\[\#1F2937\] > :not([hidden]) ~ :not([hidden]) {
+  border-color: #E2E8F0 !important;
+}
+
+html[data-theme="light"] .text-\[\#F9FAFB\] {
+  color: #0F172A !important;
+}
+
+html[data-theme="light"] .text-\[\#9CA3AF\] {
+  color: #475569 !important;
+}
+
+html[data-theme="light"] .text-\[\#D1D5DB\] {
+  color: #334155 !important;
+}
+
+html[data-theme="light"] .text-\[\#22D3EE\] {
+  color: #0891B2 !important;
+}
+
+html[data-theme="light"] .text-\[\#A5B4FC\] {
+  color: #4F46E5 !important;
+}
+
+html[data-theme="light"] select option,
+html[data-theme="light"] select optgroup {
+  background-color: #FFFFFF;
+  color: #0F172A;
+}
+
+html[data-theme="light"] ::-webkit-scrollbar-track {
+  background: #F1F5F9;
+}
+
+html[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+}
+
+html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+/* ============================================================================
+   PRINT / SAVE PDF STYLESHEET
+   ============================================================================ */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  html,
+  body,
+  .bg-\[\#0B0F19\],
+  .bg-\[\#111827\] {
+    background: #FFFFFF !important;
+    color: #0F172A !important;
+  }
+  .border-\[\#1F2937\],
+  .border-\[\#374151\] {
+    border-color: #CBD5E1 !important;
+  }
+  .text-\[\#F9FAFB\],
+  .text-\[\#D1D5DB\] {
+    color: #0F172A !important;
+  }
+  .text-\[\#9CA3AF\] {
+    color: #475569 !important;
+  }
+  section,
+  table {
+    break-inside: avoid;
+  }
+}

@@ -323,23 +323,51 @@ db_error_summary <- dbGetQuery(con, sql_error_summary) %>%
     error_rate = round((errors / total_transactions) * 100, 2)
   )
 
+err_tbl_cols <- dbListFields(con, target_table)
+url_col_sql <- if ("URL" %in% err_tbl_cols) "CAST(URL AS VARCHAR)" else "CAST(NULL AS VARCHAR)"
+fm_col_sql  <- if ("failureMessage" %in% err_tbl_cols) "CAST(failureMessage AS VARCHAR)" else "CAST(NULL AS VARCHAR)"
+
 sql_error_details <- sprintf("
   SELECT
     run_id,
     app_name,
     label,
+    %s AS URL,
     %s AS responseCode,
     %s AS responseMessage,
+    %s AS failureMessage,
     COUNT(*) AS error_count
   FROM %s
   %s AND NOT (%s)
-  GROUP BY run_id, app_name, label, responseCode, responseMessage
+  GROUP BY run_id, app_name, label, URL, responseCode, responseMessage, failureMessage
   ORDER BY app_name, label, error_count DESC
-", response_code_col, response_msg_col, target_table, where_clause, is_pass_expr)
+", url_col_sql, response_code_col, response_msg_col, fm_col_sql, target_table, where_clause, is_pass_expr)
 
 db_error_details <- dbGetQuery(con, sql_error_details)
 
-# 3G. 1-Minute Bucketed Time-Series per Run (for lightweight Executive Charts Modal)
+if (nrow(db_error_details) > 0) {
+  is_container <- grepl("^Number of samples in transaction", db_error_details$responseMessage, ignore.case = TRUE)
+  if (any(!is_container)) {
+    db_error_details <- db_error_details[!is_container, , drop = FALSE]
+  }
+}
+
+# 3G. Adaptive Bucketed Time-Series per Run (for lightweight Executive Charts Modal)
+max_dur_secs <- if (exists("db_run_summary") && nrow(db_run_summary) > 0) {
+  max(db_run_summary$duration_mins, na.rm = TRUE) * 60
+} else 0
+total_ts_rows <- if (exists("db_run_summary") && nrow(db_run_summary) > 0) {
+  sum(db_run_summary$requests, na.rm = TRUE)
+} else 0
+ts_bin_secs <- if (max_dur_secs <= 180 || total_ts_rows <= 100) {
+  1L
+} else if (max_dur_secs <= 600) {
+  10L
+} else {
+  60L
+}
+ts_bin_float <- as.numeric(ts_bin_secs)
+
 where_clause_t <- sprintf("WHERE t.run_id IN (%s)%s%s", formatted_run_ids, sql_filter_clause, sql_exclusion_clause)
 sql_timeseries <- sprintf("
   WITH run_bounds AS (
@@ -353,59 +381,60 @@ sql_timeseries <- sprintf("
       t.run_id,
       t.app_name,
       COALESCE(t.csv_filename, t.app_name) AS csv_id,
-      CAST(FLOOR(date_diff('seconds', b.min_ts, t.timestamp) / 60.0) AS INTEGER) AS elapsed_min,
+      CAST(FLOOR(date_diff('seconds', b.min_ts, t.timestamp) / %f) AS INTEGER) AS elapsed_bucket,
       %s AS csv_active_users
     FROM %s t
     JOIN run_bounds b ON t.run_id = b.run_id
     %s
-    GROUP BY t.run_id, t.app_name, COALESCE(t.csv_filename, t.app_name), elapsed_min
-    HAVING elapsed_min >= 0
+    GROUP BY t.run_id, t.app_name, COALESCE(t.csv_filename, t.app_name), elapsed_bucket
+    HAVING elapsed_bucket >= 0
   ),
   app_minute_vu AS (
-    SELECT run_id, app_name, elapsed_min, CAST(SUM(csv_active_users) AS INTEGER) AS active_users
+    SELECT run_id, app_name, elapsed_bucket, CAST(SUM(csv_active_users) AS INTEGER) AS active_users
     FROM csv_minute_vu
-    GROUP BY run_id, app_name, elapsed_min
+    GROUP BY run_id, app_name, elapsed_bucket
   ),
   all_minute_vu AS (
-    SELECT run_id, elapsed_min, CAST(SUM(csv_active_users) AS INTEGER) AS active_users
+    SELECT run_id, elapsed_bucket, CAST(SUM(csv_active_users) AS INTEGER) AS active_users
     FROM csv_minute_vu
-    GROUP BY run_id, elapsed_min
+    GROUP BY run_id, elapsed_bucket
   ),
   all_tx_buckets AS (
     SELECT
       t.run_id,
-      CAST(FLOOR(date_diff('seconds', b.min_ts, t.timestamp) / 60.0) AS INTEGER) AS elapsed_min,
+      CAST(FLOOR(date_diff('seconds', b.min_ts, t.timestamp) / %f) AS INTEGER) AS elapsed_bucket,
       COUNT(*) AS total_tx,
       SUM(CASE WHEN %s THEN 1 ELSE 0 END) AS passed_tx,
       SUM(CASE WHEN NOT (%s) THEN 1 ELSE 0 END) AS failed_tx,
-      ROUND(SUM(CASE WHEN %s THEN 1 ELSE 0 END) / 60.0, 2) AS tps,
+      ROUND(SUM(CASE WHEN %s THEN 1 ELSE 0 END) / %f, 2) AS tps,
       ROUND(QUANTILE_CONT(t.elapsed, %f), 0) AS pct_rt
     FROM %s t
     JOIN run_bounds b ON t.run_id = b.run_id
     %s
-    GROUP BY t.run_id, elapsed_min
-    HAVING elapsed_min >= 0
+    GROUP BY t.run_id, elapsed_bucket
+    HAVING elapsed_bucket >= 0
   ),
   app_tx_buckets AS (
     SELECT
       t.run_id,
       t.app_name,
-      CAST(FLOOR(date_diff('seconds', b.min_ts, t.timestamp) / 60.0) AS INTEGER) AS elapsed_min,
+      CAST(FLOOR(date_diff('seconds', b.min_ts, t.timestamp) / %f) AS INTEGER) AS elapsed_bucket,
       COUNT(*) AS total_tx,
       SUM(CASE WHEN %s THEN 1 ELSE 0 END) AS passed_tx,
       SUM(CASE WHEN NOT (%s) THEN 1 ELSE 0 END) AS failed_tx,
-      ROUND(SUM(CASE WHEN %s THEN 1 ELSE 0 END) / 60.0, 2) AS tps,
+      ROUND(SUM(CASE WHEN %s THEN 1 ELSE 0 END) / %f, 2) AS tps,
       ROUND(QUANTILE_CONT(t.elapsed, %f), 0) AS pct_rt
     FROM %s t
     JOIN run_bounds b ON t.run_id = b.run_id
     %s
-    GROUP BY t.run_id, t.app_name, elapsed_min
-    HAVING elapsed_min >= 0
+    GROUP BY t.run_id, t.app_name, elapsed_bucket
+    HAVING elapsed_bucket >= 0
   )
   SELECT
     a.run_id,
     'ALL' AS app_name,
-    a.elapsed_min,
+    a.elapsed_bucket * %d AS elapsed_sec,
+    ROUND((a.elapsed_bucket * %d) / 60.0, 2) AS elapsed_min,
     a.total_tx,
     a.passed_tx,
     a.failed_tx,
@@ -413,12 +442,13 @@ sql_timeseries <- sprintf("
     a.pct_rt,
     COALESCE(au.active_users, 0) AS active_users
   FROM all_tx_buckets a
-  LEFT JOIN all_minute_vu au ON a.run_id = au.run_id AND a.elapsed_min = au.elapsed_min
+  LEFT JOIN all_minute_vu au ON a.run_id = au.run_id AND a.elapsed_bucket = au.elapsed_bucket
   UNION ALL
   SELECT
     ap.run_id,
     ap.app_name,
-    ap.elapsed_min,
+    ap.elapsed_bucket * %d AS elapsed_sec,
+    ROUND((ap.elapsed_bucket * %d) / 60.0, 2) AS elapsed_min,
     ap.total_tx,
     ap.passed_tx,
     ap.failed_tx,
@@ -426,11 +456,12 @@ sql_timeseries <- sprintf("
     ap.pct_rt,
     COALESCE(apu.active_users, 0) AS active_users
   FROM app_tx_buckets ap
-  LEFT JOIN app_minute_vu apu ON ap.run_id = apu.run_id AND ap.app_name = apu.app_name AND ap.elapsed_min = apu.elapsed_min
-  ORDER BY run_id, app_name, elapsed_min ASC
-", target_table, where_clause, csv_active_users_expr, target_table, where_clause_t,
-   is_pass_expr, is_pass_expr, is_pass_expr, rt_percentile, target_table, where_clause_t,
-   is_pass_expr, is_pass_expr, is_pass_expr, rt_percentile, target_table, where_clause_t)
+  LEFT JOIN app_minute_vu apu ON ap.run_id = apu.run_id AND ap.app_name = apu.app_name AND ap.elapsed_bucket = apu.elapsed_bucket
+  ORDER BY run_id, app_name, elapsed_sec ASC
+", target_table, where_clause, ts_bin_float, csv_active_users_expr, target_table, where_clause_t,
+   ts_bin_float, is_pass_expr, is_pass_expr, is_pass_expr, ts_bin_float, rt_percentile, target_table, where_clause_t,
+   ts_bin_float, is_pass_expr, is_pass_expr, is_pass_expr, ts_bin_float, rt_percentile, target_table, where_clause_t,
+   ts_bin_secs, ts_bin_secs, ts_bin_secs, ts_bin_secs)
 
 db_timeseries <- dbGetQuery(con, sql_timeseries)
 
@@ -737,6 +768,7 @@ if (!is.null(rt_sla_config)) {
   }
 
   get_rt_threshold <- function(lbl) {
+    if (length(rt_threshold_lookup) == 0) return(rt_default)
     matching_prefixes <- names(rt_threshold_lookup)[startsWith(lbl, names(rt_threshold_lookup))]
     if (length(matching_prefixes) > 0) {
       matching_prefixes <- matching_prefixes[order(nchar(matching_prefixes), decreasing = TRUE)]
