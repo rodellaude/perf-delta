@@ -246,7 +246,7 @@ export function generateStaticHtmlString(opts: StaticHtmlExportOptions): string 
   const baseApdex = baselineRun ? computeFallbackApdex(baselineRun) : null;
   const apdexDelta = baseApdex ? Number((summary.apdex.score - baseApdex.score).toFixed(2)) : null;
 
-  const displayParagraphs = aiSummary ? aiSummary.paragraphs : [summary.paragraph1, summary.paragraph2];
+  const displayParagraphs = aiSummary ? aiSummary.paragraphs : summary.paragraphs;
   const displayNextSteps =
     aiSummary && aiSummary.nextSteps.length > 0 ? aiSummary.nextSteps : summary.nextSteps;
 

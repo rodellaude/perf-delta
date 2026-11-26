@@ -13,7 +13,7 @@
   - 1-click **`Share`** button copies the exact URL (`run`, `base`, `tab`, `range`, and multi-select filters).
 - **Sub-Second Native DuckDB CSV Ingestion:** Upload CSVs directly in **Settings → Manage Runs** (drag-and-drop or server folder path) or run `.\register.ps1` from CLI/CI.
 - **Full-Stack Analytics:**
-  - **Overview:** Executive Summary (0 ms deterministic + Admin-persisted **Google Gemini / Planit Amplify** AI summary in DuckDB), Apdex distribution, 4 KPIs with Baseline Δ, synchronized Concurrency/Throughput & Latency charts with Copy PNG.
+  - **Overview:** Executive Summary (0 ms Rule-based + Admin-persisted **Google Gemini / Planit Amplify** AI summary in DuckDB), Apdex distribution, 4 KPIs with Baseline Δ, synchronized Concurrency/Throughput & Latency charts with Copy PNG.
   - **Applications → Scenarios → Transactions:** Macro-to-Micro drilldown with SLA thresholds, longest-prefix overrides, and Baseline P95 Δ.
   - **Compare vs Base & Multi-Run Historical Trends:** Build-over-build P95/TPS/Apdex/Error trend charts, configurable build anchor dropdown (`Compare vs`), drift sensitivity (`±5%` / `±10%` / `±20%`), and Scenario/Transaction Drift Table.
   - **Multi-Select Include / Exclude Global Filters:** Filter by Apps, Scenarios, or Transactions and recalculate every view live.
@@ -148,7 +148,7 @@ Base URL: `http://localhost:8080` (or `http://<your-IP>:8080`). Admin endpoints 
 ## Transferring & Deploying on Restricted / Air-Gapped Corporate Networks
 
 At runtime, **Perf-Delta is 100% self-contained locally** — all charts (Recharts), icons (Lucide), **Inter & JetBrains Mono fonts** (`@fontsource/*`), DuckDB vault, and offline Static HTML export make **zero external CDN requests**.
-- **AI Executive Summary offline behavior:** **Planit Amplify** works if allowlisted on your corporate network; if no AI endpoint is reachable, Perf-Delta runs cleanly on its built-in **0 ms deterministic Executive Summary**.
+- **AI Executive Summary offline behavior:** **Planit Amplify** works if allowlisted on your corporate network; if no AI endpoint is reachable, Perf-Delta runs cleanly on its built-in **0 ms Rule-based Executive Summary**.
 
 ### Option A — Online / Corporate npm Mirror *(Default — Recommended)*
 Use this whenever the target machine can reach `registry.npmjs.org` or an internal corporate npm mirror (Artifactory, Nexus, Azure Artifacts):

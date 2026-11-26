@@ -237,10 +237,10 @@ export const ExecutiveSummaryBanner: React.FC<ExecutiveSummaryBannerProps> = ({
         });
         setCacheTick((t) => t + 1);
       } else {
-        setAiError(data.reason || data.error || 'AI summary unavailable — showing deterministic summary.');
+        setAiError(data.reason || data.error || 'AI summary unavailable — showing Rule-based summary.');
       }
     } catch {
-      setAiError('Could not reach /api/ai-summary — showing deterministic summary.');
+      setAiError('Could not reach /api/ai-summary — showing Rule-based summary.');
     } finally {
       setLoadingAi(false);
     }
@@ -255,7 +255,7 @@ export const ExecutiveSummaryBanner: React.FC<ExecutiveSummaryBannerProps> = ({
       ? 'border-[#F59E0B]/40 bg-[#F59E0B]/15 text-[#F59E0B]'
       : 'border-[#EF4444]/40 bg-[#EF4444]/15 text-[#EF4444]';
 
-  const displayParagraphs = activeAi ? activeAi.paragraphs : [summary.paragraph1, summary.paragraph2];
+  const displayParagraphs = activeAi ? activeAi.paragraphs : summary.paragraphs;
   const displayNextSteps = activeAi ? activeAi.nextSteps : summary.nextSteps;
 
   return (
@@ -335,7 +335,7 @@ export const ExecutiveSummaryBanner: React.FC<ExecutiveSummaryBannerProps> = ({
                 onClick={() => setPreferDeterministic(true)}
                 className="inline-flex items-center gap-1 rounded border border-[#1F2937] bg-[#0B0F19] px-2 py-0.5 text-[10.5px] font-medium text-[#9CA3AF] hover:border-[#374151] hover:text-[#F9FAFB] transition-colors"
               >
-                Use Deterministic
+                Use Rule-based
               </button>
             </>
           ) : cachedAi ? (
