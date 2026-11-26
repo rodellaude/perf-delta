@@ -14,6 +14,7 @@ export interface StaticHtmlAiSummary {
 export interface StaticHtmlExportOptions {
   run: PerformanceTestRun;
   baselineRun: PerformanceTestRun | null;
+  vaultRuns?: PerformanceTestRun[];
   visibleSeries: TelemetryPoint[];
   scopeLabel: string;
   theme: 'dark' | 'light';
@@ -162,7 +163,77 @@ function buildSvgLineChart(opts: {
 }
 
 export function generateStaticHtmlString(opts: StaticHtmlExportOptions): string {
-  const { run, baselineRun, visibleSeries, scopeLabel, theme, aiSummary } = opts;
+  const { run, baselineRun, vaultRuns = [], visibleSeries, scopeLabel, theme, aiSummary } = opts;
+  const chronoVaultRuns = [...vaultRuns].sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
+  const trendSeriesPoints: TelemetryPoint[] = chronoVaultRuns.map((r) => {
+    const m = r.name.match(/#([^\s]+)$/);
+    const lbl = m ? `#${m[1]}` : r.id.replace(/^vault-[a-z]+-/i, '#');
+    return {
+      timestamp: lbl,
+      isoTimestamp: r.startedAt,
+      epochMs: Date.parse(r.startedAt),
+      vus: r.summary.peakVUs,
+      throughput: r.summary.avgThroughputRps,
+      avg: Math.round(r.summary.p95ResponseTimeMs * 0.6),
+      p90: Math.round(r.summary.p90ResponseTimeMs ?? r.summary.p95ResponseTimeMs * 0.85),
+      p95: Math.round(r.summary.p95ResponseTimeMs),
+      p99: Math.round(r.summary.p95ResponseTimeMs * 1.15),
+      errorCount: r.summary.failedRequests,
+      errorRate: r.summary.errorRatePct,
+      phase: 'steady',
+    };
+  });
+  const trendChartLatency =
+    chronoVaultRuns.length >= 2
+      ? buildSvgLineChart({
+          id: 'chart-trend-latency',
+          title: 'Multi-Run P95 & P90 Latency Trend',
+          subtitle: `${chronoVaultRuns.length} Historical Builds`,
+          series: trendSeriesPoints,
+          yUnit: 'ms',
+          slaLine: run.sla.rtEnabled !== false ? { value: run.sla.p95Ms, label: `SLA ${run.sla.p95Ms} ms`, color: '#EF4444' } : null,
+          lines: [
+            { label: 'P95 (ms)', color: '#F59E0B', values: trendSeriesPoints.map((p) => p.p95) },
+            { label: 'P90 (ms)', color: '#06B6D4', values: trendSeriesPoints.map((p) => p.p90) },
+          ],
+        })
+      : '';
+  const trendChartTps =
+    chronoVaultRuns.length >= 2
+      ? buildSvgLineChart({
+          id: 'chart-trend-tps',
+          title: 'Multi-Run Throughput & Error Rate Trend',
+          subtitle: `${chronoVaultRuns.length} Historical Builds`,
+          series: trendSeriesPoints,
+          yUnit: 'req/s / %',
+          lines: [
+            { label: 'Avg TPS (req/s)', color: '#06B6D4', values: trendSeriesPoints.map((p) => p.throughput) },
+            { label: 'Error Rate (%)', color: '#EF4444', values: trendSeriesPoints.map((p) => p.errorRate) },
+          ],
+        })
+      : '';
+  const trendScenDriftRows = (() => {
+    if (chronoVaultRuns.length < 2) return '';
+    const latest = chronoVaultRuns[chronoVaultRuns.length - 1];
+    const prev = chronoVaultRuns[chronoVaultRuns.length - 2];
+    const builds = chronoVaultRuns.slice(-6);
+    const names = [...new Set(builds.flatMap((r) => (r.scenarios || []).map((s) => s.scenario)))];
+    return names
+      .map((name) => {
+        const curHit = (latest.scenarios || []).find((s) => s.scenario === name);
+        const prevHit = (prev.scenarios || []).find((s) => s.scenario === name);
+        if (!curHit) return '';
+        const cells = builds
+          .map((r) => {
+            const h = (r.scenarios || []).find((s) => s.scenario === name);
+            return `<td class="num">${h ? `${Math.round(h.p95).toLocaleString()} ms` : '—'}</td>`;
+          })
+          .join('');
+        return `<tr><td class="mono-sm"><strong>${esc(name)}</strong></td>${cells}<td class="num">${fmtDeltaPill(curHit.p95, prevHit?.p95, true)}</td></tr>`;
+      })
+      .filter(Boolean)
+      .join('');
+  })();
   const summary = synthesizeExecutiveSummary(run, baselineRun, scopeLabel);
   const baseApdex = baselineRun ? computeFallbackApdex(baselineRun) : null;
   const apdexDelta = baseApdex ? Number((summary.apdex.score - baseApdex.score).toFixed(2)) : null;
@@ -309,8 +380,16 @@ export function generateStaticHtmlString(opts: StaticHtmlExportOptions): string 
     })
     .join('');
 
+  const baseAppMap = new Map<string, { p95: number; throughput: number }>();
+  if (baselineRun?.apps) {
+    for (const ba of baselineRun.apps) {
+      baseAppMap.set(ba.appName, { p95: ba.p95, throughput: ba.throughput });
+    }
+  }
+
   const appRowsHtml = (run.apps || [])
     .map((a) => {
+      const baseApp = baseAppMap.get(a.appName);
       const score = a.apdexScore ?? 0;
       const rating = a.apdexRating || 'N/A';
       const apdexHtml =
@@ -320,10 +399,15 @@ export function generateStaticHtmlString(opts: StaticHtmlExportOptions): string 
       return `
       <tr>
         <td><strong>${esc(a.appName)}</strong></td>
+        <td class="num">${a.peakVUs.toLocaleString()}</td>
         <td class="num">${a.samples.toLocaleString()}</td>
-        <td class="num">${a.peakVUs}</td>
-        <td class="num">${a.throughput.toFixed(2)} req/s</td>
-        <td class="num">${a.p95.toFixed(0)} ms</td>
+        <td class="num">${a.throughput.toFixed(2)}</td>
+        <td class="num">${fmtDeltaPill(a.throughput, baseApp?.throughput, false)}</td>
+        <td class="num">${a.avg.toFixed(0)}</td>
+        <td class="num">${a.p90.toFixed(0)}</td>
+        <td class="num"><strong>${a.p95.toFixed(0)}</strong></td>
+        <td class="num">${fmtDeltaPill(a.p95, baseApp?.p95, true)}</td>
+        <td class="num">${a.p99.toFixed(0)}</td>
         <td class="num ${a.errorPct > 0 ? 'text-fail' : ''}">${a.errorPct.toFixed(2)}%</td>
         <td class="num">${apdexHtml}</td>
       </tr>
@@ -531,6 +615,10 @@ export function generateStaticHtmlString(opts: StaticHtmlExportOptions): string 
     .exec-grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 14px; }
     @media (max-width: 1024px) { .exec-grid { grid-template-columns: 1fr; } }
     .exec-p { margin: 0 0 10px; color: var(--text-2); font-size: 12.5px; }
+    .exec-bullets { margin: 4px 0 10px; padding-left: 18px; color: var(--text-2); font-size: 12.5px; }
+    .exec-bullets li { margin-bottom: 5px; }
+    .exec-sub-bullets { margin: 4px 0 6px; padding-left: 20px; list-style-type: circle; color: var(--muted); font-size: 11.5px; }
+    .exec-sub-bullets li { margin-bottom: 3px; }
     .next-box { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 12px; }
     .next-box ul { margin: 8px 0 0; padding-left: 18px; color: var(--text-2); font-size: 12px; }
     .next-box li { margin-bottom: 6px; }
@@ -588,18 +676,30 @@ export function generateStaticHtmlString(opts: StaticHtmlExportOptions): string 
           <button class="nav-btn active" onclick="showTab('overview', this)" title="Overview">
             <span class="nav-btn-left"><span class="nav-icon">⊞</span><span class="nav-label">Overview</span></span>
           </button>
-          <button class="nav-btn" onclick="showTab('transactions', this)" title="Transactions">
-            <span class="nav-btn-left"><span class="nav-icon">▤</span><span class="nav-label">Transactions</span></span>
-            <span class="nav-badge ${breachCount > 0 ? 'danger' : ''}">${breachCount > 0 ? `${breachCount}!` : run.endpoints.length}</span>
+          <button class="nav-btn" onclick="showTab('applications', this)" title="Applications">
+            <span class="nav-btn-left"><span class="nav-icon">⬡</span><span class="nav-label">Applications</span></span>
+            <span class="nav-badge">${run.apps?.length ?? 0}</span>
           </button>
           <button class="nav-btn" onclick="showTab('scenarios', this)" title="Scenarios">
             <span class="nav-btn-left"><span class="nav-icon">◫</span><span class="nav-label">Scenarios</span></span>
             <span class="nav-badge">${run.scenarios?.length ?? 0}</span>
           </button>
+          <button class="nav-btn" onclick="showTab('transactions', this)" title="Transactions">
+            <span class="nav-btn-left"><span class="nav-icon">▤</span><span class="nav-label">Transactions</span></span>
+            <span class="nav-badge ${breachCount > 0 ? 'danger' : ''}">${breachCount > 0 ? `${breachCount}!` : run.endpoints.length}</span>
+          </button>
           <button class="nav-btn" onclick="showTab('compare', this)" title="${baselineRun ? 'Compare vs Base' : 'App Health'}">
             <span class="nav-btn-left"><span class="nav-icon">⇄</span><span class="nav-label">${baselineRun ? 'Compare vs Base' : 'App Health'}</span></span>
             ${baselineRun ? '<span class="nav-badge cyan">Δ</span>' : ''}
           </button>
+          ${
+            chronoVaultRuns.length >= 2
+              ? `<button class="nav-btn" onclick="showTab('trends', this)" title="Historical Trends">
+            <span class="nav-btn-left"><span class="nav-icon">📈</span><span class="nav-label">Trends</span></span>
+            <span class="nav-badge cyan">${chronoVaultRuns.length}</span>
+          </button>`
+              : ''
+          }
           <button class="nav-btn" onclick="showTab('errors', this)" title="Errors &amp; Diagnostics">
             <span class="nav-btn-left"><span class="nav-icon">⚠</span><span class="nav-label">Errors &amp; Diagnostics</span></span>
             <span class="nav-badge ${totalErrors > 0 ? 'danger' : ''}">${totalErrors.toLocaleString()}</span>
@@ -634,7 +734,46 @@ export function generateStaticHtmlString(opts: StaticHtmlExportOptions): string 
         </div>
         <div class="card-body exec-grid">
           <div>
-            ${displayParagraphs.map((p) => `<p class="exec-p">${renderBoldHtml(p)}</p>`).join('')}
+            ${(() => {
+              const out: string[] = [];
+              let bullets: { text: string; children: string[]; wasSub?: boolean }[] = [];
+              const flush = () => {
+                if (bullets.length === 0) return;
+                out.push(
+                  `<ul class="exec-bullets">${bullets
+                    .map(
+                      (b) =>
+                        `<li>${renderBoldHtml(b.text)}${
+                          b.children.length > 0
+                            ? `<ul class="exec-sub-bullets">${b.children
+                                .map((c) => `<li>${renderBoldHtml(c)}</li>`)
+                                .join('')}</ul>`
+                            : ''
+                        }</li>`
+                    )
+                    .join('')}</ul>`
+                );
+                bullets = [];
+              };
+              for (const p of displayParagraphs) {
+                if (/^\s{2,}[-*•]\s+/.test(p)) {
+                  const subText = p.replace(/^\s+[-*•]\s+/, '').trim();
+                  const parent = bullets.length > 0 ? bullets[bullets.length - 1] : null;
+                  if (parent && !parent.wasSub) {
+                    parent.children.push(subText);
+                  } else {
+                    bullets.push({ text: subText, children: [], wasSub: true });
+                  }
+                } else if (/^[-*•]\s+/.test(p)) {
+                  bullets.push({ text: p.replace(/^[-*•]\s+/, '').trim(), children: [], wasSub: false });
+                } else {
+                  flush();
+                  out.push(`<p class="exec-p">${renderBoldHtml(p)}</p>`);
+                }
+              }
+              flush();
+              return out.join('');
+            })()}
             <div style="margin-top:12px;">
               <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);">
                 <strong>Apdex Distribution</strong>
@@ -709,6 +848,30 @@ export function generateStaticHtmlString(opts: StaticHtmlExportOptions): string 
                 )
                 .join('')}
             </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- APPLICATIONS -->
+    <section id="tab-applications" class="tab-panel">
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Application Performance Breakdown</span>
+          <span class="card-sub">${run.apps?.length ?? 0} application(s)</span>
+        </div>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Application</th><th class="num">Peak VUs</th><th class="num">Samples</th>
+                <th class="num">TPS</th><th class="num">TPS Δ</th>
+                <th class="num">Avg</th><th class="num">P90</th><th class="num">P95</th>
+                <th class="num">P95 Δ</th><th class="num">P99</th>
+                <th class="num">Err %</th><th class="num">Apdex</th>
+              </tr>
+            </thead>
+            <tbody>${appRowsHtml || '<tr><td colspan="12" class="muted" style="text-align:center;padding:18px;">No application breakdown available.</td></tr>'}</tbody>
           </table>
         </div>
       </div>
@@ -791,13 +954,55 @@ export function generateStaticHtmlString(opts: StaticHtmlExportOptions): string 
         <div style="overflow-x:auto;">
           <table>
             <thead>
-              <tr><th>Application</th><th class="num">Samples</th><th class="num">Peak VUs</th><th class="num">Throughput</th><th class="num">P95</th><th class="num">Error %</th><th class="num">Apdex</th></tr>
+              <tr>
+                <th>Application</th><th class="num">Peak VUs</th><th class="num">Samples</th>
+                <th class="num">TPS</th><th class="num">TPS Δ</th>
+                <th class="num">Avg</th><th class="num">P90</th><th class="num">P95</th>
+                <th class="num">P95 Δ</th><th class="num">P99</th>
+                <th class="num">Err %</th><th class="num">Apdex</th>
+              </tr>
             </thead>
-            <tbody>${appRowsHtml || '<tr><td colspan="7" class="muted" style="text-align:center;padding:18px;">No application breakdown available.</td></tr>'}</tbody>
+            <tbody>${appRowsHtml || '<tr><td colspan="12" class="muted" style="text-align:center;padding:18px;">No application breakdown available.</td></tr>'}</tbody>
           </table>
         </div>
       </div>
     </section>
+
+    ${
+      chronoVaultRuns.length >= 2
+        ? `<!-- TRENDS -->
+    <section id="tab-trends" class="tab-panel">
+      <div class="grid-2">
+        ${trendChartLatency}
+        ${trendChartTps}
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Scenario P95 Build-over-Build Drift</span>
+          <span class="card-sub">${chronoVaultRuns.length} historical builds</span>
+        </div>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Scenario</th>
+                ${chronoVaultRuns
+                  .slice(-6)
+                  .map((r) => {
+                    const m = r.name.match(/#([^\s]+)$/);
+                    return `<th class="num">${esc(m ? `#${m[1]}` : r.id)} P95</th>`;
+                  })
+                  .join('')}
+                <th class="num">vs Prev</th>
+              </tr>
+            </thead>
+            <tbody>${trendScenDriftRows || '<tr><td colspan="8" class="muted" style="text-align:center;padding:18px;">No scenario trend data.</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
+    </section>`
+        : ''
+    }
 
     <!-- ERRORS -->
     <section id="tab-errors" class="tab-panel">

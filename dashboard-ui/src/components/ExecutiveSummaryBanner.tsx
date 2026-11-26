@@ -108,14 +108,76 @@ export const ExecutiveSummaryBanner: React.FC<ExecutiveSummaryBannerProps> = ({
     }
     setLoadingAi(true);
     try {
-      const scenarioSummary = (run.scenarios || [])
-        .slice(0, 10)
-        .map((s) => `- ${s.scenario}: P95 ${s.p95} ms, ${s.throughput} TPS, ${s.errorPct}% err`)
+      const baseScenMap = new Map<string, number>();
+      if (baselineRun?.scenarios) {
+        for (const bs of baselineRun.scenarios) {
+          baseScenMap.set(`${bs.appName}|${bs.scenario}`, bs.p95);
+          if (!baseScenMap.has(bs.scenario)) baseScenMap.set(bs.scenario, bs.p95);
+        }
+      }
+
+      const journeyBreakdown = (run.scenarios || [])
+        .slice(0, 15)
+        .map((s) => {
+          const baseP95 = baseScenMap.get(`${s.appName}|${s.scenario}`) ?? baseScenMap.get(s.scenario);
+          if (baseP95 && baseP95 > 0) {
+            const pct = ((s.p95 - baseP95) / baseP95) * 100;
+            const status = pct <= -5 ? 'Improved' : pct >= 5 ? 'Regressed' : 'Broadly Stable';
+            const sign = pct > 0 ? '+' : '';
+            return `- ${s.scenario}: P95 ${s.p95} ms vs ${baseP95} ms (${sign}${pct.toFixed(1)}%, ${status}), ${s.throughput} TPS, ${s.errorPct}% err`;
+          }
+          return `- ${s.scenario}: P95 ${s.p95} ms, ${s.throughput} TPS, ${s.errorPct}% err`;
+        })
         .join('\n');
-      const errorSummary = run.httpErrors
-        .slice(0, 6)
-        .map((e) => `- HTTP ${e.code} (${e.label}): ${e.count} errors`)
-        .join('\n');
+
+      const errorBreakdown =
+        run.errorDetails && run.errorDetails.length > 0
+          ? run.errorDetails
+              .slice(0, 10)
+              .map(
+                (d) =>
+                  `- ${d.endpoint} (${d.scenario}): HTTP ${d.responseCode} — ${d.failureMessage || d.responseMessage} (${d.count} occurrences)`
+              )
+              .join('\n')
+          : run.httpErrors.length > 0
+          ? run.httpErrors
+              .slice(0, 6)
+              .map((e) => `- HTTP ${e.code} (${e.label}): ${e.count} errors (${e.percentage}%)`)
+              .join('\n')
+          : '0 errors recorded.';
+
+      const appNames =
+        run.apps && run.apps.length > 0 ? run.apps.map((a) => a.appName).join(', ') : run.name;
+      const rtMetric = (run.sla.rtMetric || 'p95').toUpperCase();
+      const rtEnabled = run.sla.rtEnabled !== false;
+      const errEnabled = run.sla.errorEnabled !== false;
+      const breachCount = run.endpoints.filter((ep) => {
+        const p95B = ep.rtBreached !== undefined ? ep.rtBreached : rtEnabled && ep.p95 > ep.slaP95Ms;
+        const errB =
+          ep.errorBreached !== undefined
+            ? ep.errorBreached
+            : errEnabled && ep.errorPct > run.sla.errorRatePct;
+        return p95B || errB;
+      }).length;
+      const cleanBaseId = baselineRun ? baselineRun.id.replace(/^vault-[a-z]+-/i, '') : 'N/A';
+      const baseDeltaPct =
+        baselineRun && baselineRun.summary.p95ResponseTimeMs > 0
+          ? ((run.summary.p95ResponseTimeMs - baselineRun.summary.p95ResponseTimeMs) /
+              baselineRun.summary.p95ResponseTimeMs) *
+            100
+          : null;
+      const baselineComp =
+        baselineRun && baseDeltaPct !== null
+          ? `${baseDeltaPct > 0 ? '+' : ''}${baseDeltaPct.toFixed(1)}% vs baseline #${cleanBaseId} at ${baselineRun.summary.p95ResponseTimeMs} ms`
+          : 'standalone single-run, no baseline';
+      const runDate = run.startedAt ? run.startedAt.slice(0, 10) : new Date().toISOString().slice(0, 10);
+      const flowTheme =
+        run.scenarios && run.scenarios.length > 0
+          ? run.scenarios
+              .slice(0, 6)
+              .map((s) => s.scenario)
+              .join(', ')
+          : selectedApp;
 
       const resp = await fetch('/api/ai-summary', {
         method: 'POST',
@@ -123,8 +185,13 @@ export const ExecutiveSummaryBanner: React.FC<ExecutiveSummaryBannerProps> = ({
         body: JSON.stringify({
           scopeKey,
           runId: run.id,
-          baselineRunId: baselineRun?.id || '',
+          baselineRunId: cleanBaseId,
           runName: run.name,
+          appNames,
+          env: run.environment,
+          testType: run.name.replace(/^\[Vault\]\s*/i, '').replace(/\s*#\S+$/, ''),
+          runDate,
+          durationDesc: `${run.durationMinutes} minutes`,
           scopeLabel: selectedApp,
           durationMinutes: run.durationMinutes,
           peakVUs: run.summary.peakVUs,
@@ -132,6 +199,10 @@ export const ExecutiveSummaryBanner: React.FC<ExecutiveSummaryBannerProps> = ({
           avgThroughputRps: run.summary.avgThroughputRps,
           p95ResponseTimeMs: run.summary.p95ResponseTimeMs,
           errorRatePct: run.summary.errorRatePct,
+          rtMetric,
+          breachCount,
+          baselineComp,
+          flowTheme,
           apdexScore: summary.apdex.score,
           apdexRating: summary.apdex.rating,
           overallStatus: summary.overallStatus,
@@ -140,8 +211,8 @@ export const ExecutiveSummaryBanner: React.FC<ExecutiveSummaryBannerProps> = ({
           baselineP95Ms: baselineRun?.summary.p95ResponseTimeMs ?? null,
           baselineTps: baselineRun?.summary.avgThroughputRps ?? null,
           baselineErrorPct: baselineRun?.summary.errorRatePct ?? null,
-          scenarioSummary,
-          errorSummary,
+          journeyBreakdown,
+          errorBreakdown,
         }),
       });
       const data = await resp.json();
@@ -318,11 +389,60 @@ export const ExecutiveSummaryBanner: React.FC<ExecutiveSummaryBannerProps> = ({
                 {aiError}
               </div>
             )}
-            {displayParagraphs.map((p, idx) => (
-              <p key={idx} className="text-xs leading-relaxed text-[#D1D5DB]">
-                {renderBoldText(p)}
-              </p>
-            ))}
+            {(() => {
+              interface BulletItem {
+                text: string;
+                children: string[];
+                wasSub?: boolean;
+              }
+              const blocks: React.ReactNode[] = [];
+              let bullets: BulletItem[] = [];
+              const flushBullets = (keyPrefix: string) => {
+                if (bullets.length === 0) return;
+                blocks.push(
+                  <ul
+                    key={keyPrefix}
+                    className="list-disc space-y-1.5 pl-5 text-xs leading-relaxed text-[#D1D5DB]"
+                  >
+                    {bullets.map((b, bi) => (
+                      <li key={bi}>
+                        {renderBoldText(b.text)}
+                        {b.children.length > 0 && (
+                          <ul className="mt-1 list-[circle] space-y-0.5 pl-5 text-[11.5px] text-[#9CA3AF]">
+                            {b.children.map((c, ci) => (
+                              <li key={ci}>{renderBoldText(c)}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                );
+                bullets = [];
+              };
+              displayParagraphs.forEach((p, idx) => {
+                if (/^\s{2,}[-*•]\s+/.test(p)) {
+                  const subText = p.replace(/^\s+[-*•]\s+/, '').trim();
+                  const parent = bullets.length > 0 ? bullets[bullets.length - 1] : null;
+                  if (parent && !parent.wasSub) {
+                    parent.children.push(subText);
+                  } else {
+                    bullets.push({ text: subText, children: [], wasSub: true });
+                  }
+                } else if (/^[-*•]\s+/.test(p)) {
+                  bullets.push({ text: p.replace(/^[-*•]\s+/, '').trim(), children: [], wasSub: false });
+                } else {
+                  flushBullets(`bl-${idx}`);
+                  blocks.push(
+                    <p key={`p-${idx}`} className="text-xs leading-relaxed text-[#D1D5DB]">
+                      {renderBoldText(p)}
+                    </p>
+                  );
+                }
+              });
+              flushBullets('bl-end');
+              return blocks;
+            })()}
 
             {/* Apdex Experience Bar */}
             <div className="pt-1">

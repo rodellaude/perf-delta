@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
+  Database,
   FilterX,
   FolderCog,
   KeyRound,
@@ -15,6 +16,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import { PerformanceTestRun } from '../types/performance';
 
 interface RtOverride {
   label: string;
@@ -36,6 +38,10 @@ interface SettingsPayload {
     provider: 'gemini' | 'amplify';
     aiUrl: string;
     aiModelId: string;
+    providers?: {
+      gemini: { url: string; modelId: string };
+      amplify: { url: string; modelId: string };
+    };
     aiPromptTemplate: string;
     hasGeminiKey: boolean;
     geminiKeyMasked: string;
@@ -65,10 +71,11 @@ interface SettingsPayload {
 }
 
 interface SettingsViewProps {
+  vaultRuns: PerformanceTestRun[];
   onSettingsSaved: () => Promise<void> | void;
 }
 
-type SettingsSubTab = 'sla' | 'ai' | 'exclusions' | 'general';
+type SettingsSubTab = 'sla' | 'ai' | 'exclusions' | 'runs' | 'general';
 
 const COMMON_TIMEZONES = [
   'Pacific/Auckland',
@@ -85,7 +92,7 @@ const COMMON_TIMEZONES = [
 const GEMINI_DEFAULT_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 const AMPLIFY_DEFAULT_URL = 'https://amplify.planittesting.com/external/api/completion';
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({ vaultRuns, onSettingsSaved }) => {
   const [subTab, setSubTab] = useState<SettingsSubTab>('sla');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -114,6 +121,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved }) =
   const [newOvLabel, setNewOvLabel] = useState('');
   const [newOvThreshold, setNewOvThreshold] = useState('2000');
   const [showPromptEditor, setShowPromptEditor] = useState(false);
+
+  // Delete run modal state
+  const [deleteTarget, setDeleteTarget] = useState<PerformanceTestRun | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deletingRun, setDeletingRun] = useState(false);
+
+  const handleConfirmDeleteRun = async () => {
+    if (!deleteTarget) return;
+    const rawId = deleteTarget.id.replace(/^vault-[a-z]+-/i, '');
+    if (deleteConfirmText.trim() !== rawId) return;
+    setDeletingRun(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/runs/${encodeURIComponent(deleteTarget.id)}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      setDeleteTarget(null);
+      setDeleteConfirmText('');
+      await onSettingsSaved();
+      setSavedBanner(`Deleted run #${rawId} from Performance_Vault.db.`);
+      window.setTimeout(() => setSavedBanner(null), 4000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete run.');
+    } finally {
+      setDeletingRun(false);
+    }
+  };
 
   // Admin password rotation state
   const [curPw, setCurPw] = useState('');
@@ -327,6 +365,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved }) =
     { id: 'sla', label: 'SLA Thresholds', icon: <ShieldCheck className="h-3.5 w-3.5" /> },
     { id: 'ai', label: 'AI Executive Summary', icon: <Sparkles className="h-3.5 w-3.5" /> },
     { id: 'exclusions', label: 'Label Exclusions', icon: <FilterX className="h-3.5 w-3.5" /> },
+    { id: 'runs', label: `Manage Runs (${vaultRuns.length})`, icon: <Database className="h-3.5 w-3.5" /> },
     { id: 'general', label: 'General & Paths', icon: <FolderCog className="h-3.5 w-3.5" /> },
   ];
 
@@ -823,72 +862,128 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved }) =
               </div>
             )}
 
-            {/* Provider Selector */}
-            <div className="grid grid-cols-2 gap-2 max-w-md">
-              {(['gemini', 'amplify'] as const).map((p) => {
-                const active = draft.ai.provider === p;
-                return (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() =>
-                      setDraft({
-                        ...draft,
-                        ai: {
-                          ...draft.ai,
-                          provider: p,
-                          aiUrl: p === 'gemini' ? GEMINI_DEFAULT_URL : AMPLIFY_DEFAULT_URL,
-                          aiModelId:
-                            p === 'gemini'
-                              ? /gemini/i.test(draft.ai.aiModelId)
-                                ? draft.ai.aiModelId
-                                : 'gemini-2.5-flash'
-                              : !/gemini/i.test(draft.ai.aiModelId) && draft.ai.aiModelId
-                              ? draft.ai.aiModelId
-                              : '19b89d52-23cf-463d-a5bb-c2896a0f8661',
-                        },
-                      })
-                    }
-                    className={`rounded-md border px-3 py-2 text-left text-xs font-medium transition-colors ${
-                      active
-                        ? 'border-[#06B6D4] bg-[#06B6D4]/15 text-[#22D3EE]'
-                        : 'border-[#1F2937] bg-[#0B0F19] text-[#9CA3AF] hover:text-[#F9FAFB]'
-                    }`}
-                  >
-                    <div>{p === 'gemini' ? 'Google Gemini' : 'Planit Amplify'}</div>
-                    <div className="text-[10px] opacity-75">
-                      {p === 'gemini' ? 'gemini-2.5-flash / pro' : 'Enterprise Completion API'}
-                    </div>
-                  </button>
-                );
-              })}
+            {/* Explicit Active Provider Selector */}
+            <div className="space-y-1.5">
+              <div className="text-[11px] font-medium text-[#9CA3AF]">
+                Active AI Provider (explicitly chosen — no automatic fallback)
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 max-w-lg">
+                {(['gemini', 'amplify'] as const).map((p) => {
+                  const active = draft.ai.provider === p;
+                  const savedProviders = draft.ai.providers ?? {
+                    gemini: { url: GEMINI_DEFAULT_URL, modelId: 'gemini-2.5-flash' },
+                    amplify: { url: AMPLIFY_DEFAULT_URL, modelId: '19b89d52-23cf-463d-a5bb-c2896a0f8661' },
+                  };
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => {
+                        const nextProviders = {
+                          ...savedProviders,
+                          [draft.ai.provider]: {
+                            url: draft.ai.aiUrl,
+                            modelId: draft.ai.aiModelId,
+                          },
+                        };
+                        setTestAiResult(null);
+                        setDraft({
+                          ...draft,
+                          ai: {
+                            ...draft.ai,
+                            provider: p,
+                            providers: nextProviders,
+                            aiUrl: nextProviders[p].url,
+                            aiModelId: nextProviders[p].modelId,
+                          },
+                        });
+                      }}
+                      className={`flex items-start justify-between rounded-md border px-3 py-2.5 text-left text-xs font-medium transition-colors ${
+                        active
+                          ? 'border-[#06B6D4] bg-[#06B6D4]/15 text-[#22D3EE]'
+                          : 'border-[#1F2937] bg-[#0B0F19] text-[#9CA3AF] hover:border-[#374151] hover:text-[#F9FAFB]'
+                      }`}
+                    >
+                      <div>
+                        <div className="font-semibold">
+                          {p === 'gemini' ? 'Google Gemini' : 'Planit Amplify'}
+                        </div>
+                        <div className="mt-0.5 text-[10px] opacity-75">
+                          {p === 'gemini' ? 'gemini-2.5-flash / pro' : 'Enterprise Completion API'}
+                        </div>
+                      </div>
+                      {active && (
+                        <span className="rounded-full border border-[#10B981]/40 bg-[#10B981]/20 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wider text-[#34D399]">
+                          Active
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
                 <label className="block text-[11px] font-medium text-[#9CA3AF] mb-1">
-                  API Endpoint URL
+                  {draft.ai.provider === 'gemini' ? 'Gemini' : 'Amplify'} Endpoint URL
                 </label>
                 <input
                   type="text"
                   value={draft.ai.aiUrl}
-                  onChange={(e) =>
-                    setDraft({ ...draft, ai: { ...draft.ai, aiUrl: e.target.value } })
-                  }
+                  onChange={(e) => {
+                    const nextUrl = e.target.value;
+                    const baseProviders = draft.ai.providers ?? {
+                      gemini: { url: GEMINI_DEFAULT_URL, modelId: 'gemini-2.5-flash' },
+                      amplify: { url: AMPLIFY_DEFAULT_URL, modelId: '19b89d52-23cf-463d-a5bb-c2896a0f8661' },
+                    };
+                    setDraft({
+                      ...draft,
+                      ai: {
+                        ...draft.ai,
+                        aiUrl: nextUrl,
+                        providers: {
+                          ...baseProviders,
+                          [draft.ai.provider]: {
+                            ...baseProviders[draft.ai.provider],
+                            url: nextUrl,
+                          },
+                        },
+                      },
+                    });
+                  }}
                   className="w-full rounded-md border border-[#1F2937] bg-[#0B0F19] px-2.5 py-1.5 text-xs text-[#F9FAFB] focus:border-[#06B6D4] focus:outline-none"
                 />
               </div>
 
               <div>
                 <label className="block text-[11px] font-medium text-[#9CA3AF] mb-1">
-                  Model ID
+                  {draft.ai.provider === 'gemini' ? 'Gemini' : 'Amplify'} Model ID
                 </label>
                 <input
                   type="text"
                   value={draft.ai.aiModelId}
-                  onChange={(e) =>
-                    setDraft({ ...draft, ai: { ...draft.ai, aiModelId: e.target.value } })
-                  }
+                  onChange={(e) => {
+                    const nextModel = e.target.value;
+                    const baseProviders = draft.ai.providers ?? {
+                      gemini: { url: GEMINI_DEFAULT_URL, modelId: 'gemini-2.5-flash' },
+                      amplify: { url: AMPLIFY_DEFAULT_URL, modelId: '19b89d52-23cf-463d-a5bb-c2896a0f8661' },
+                    };
+                    setDraft({
+                      ...draft,
+                      ai: {
+                        ...draft.ai,
+                        aiModelId: nextModel,
+                        providers: {
+                          ...baseProviders,
+                          [draft.ai.provider]: {
+                            ...baseProviders[draft.ai.provider],
+                            modelId: nextModel,
+                          },
+                        },
+                      },
+                    });
+                  }}
                   placeholder={draft.ai.provider === 'gemini' ? 'gemini-2.5-flash' : 'Model UUID'}
                   className="w-full rounded-md border border-[#1F2937] bg-[#0B0F19] px-2.5 py-1.5 text-xs text-[#F9FAFB] focus:border-[#06B6D4] focus:outline-none"
                 />
@@ -1096,7 +1191,156 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onSettingsSaved }) =
         </div>
       )}
 
-      {/* TAB 4: GENERAL & PATHS */}
+      {/* TAB 4: MANAGE RUNS */}
+      {subTab === 'runs' && (
+        <div className="rounded-lg border border-[#1F2937] bg-[#111827] overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1F2937] px-4 py-3">
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-[#F9FAFB]">
+                Registered Vault Runs ({vaultRuns.length})
+              </h3>
+              <p className="text-[11px] text-[#9CA3AF]">
+                Permanently remove invalid or accidental runs from <code className="text-[#22D3EE]">Performance_Vault.db</code> (purges raw samples, pre-aggregated tables, and saved AI summaries).
+              </p>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-[#0B0F19] text-[10px] uppercase tracking-wider text-[#9CA3AF]">
+                <tr>
+                  <th className="px-3.5 py-2">Run ID</th>
+                  <th className="px-3.5 py-2">Test Name</th>
+                  <th className="px-3.5 py-2">Date</th>
+                  <th className="px-3.5 py-2 text-right">Samples</th>
+                  <th className="px-3.5 py-2 text-right">Peak VUs</th>
+                  <th className="px-3.5 py-2 text-right">P95 (ms)</th>
+                  <th className="px-3.5 py-2 text-right">Error %</th>
+                  <th className="px-3.5 py-2 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#1F2937]">
+                {vaultRuns.map((r) => {
+                  const rawId = r.id.replace(/^vault-[a-z]+-/i, '');
+                  return (
+                    <tr key={r.id} className="hover:bg-[#1F2937]/40">
+                      <td className="metric-num px-3.5 py-2 font-semibold text-[#22D3EE]">#{rawId}</td>
+                      <td className="px-3.5 py-2 font-medium text-[#F9FAFB]">{r.name}</td>
+                      <td className="metric-num px-3.5 py-2 text-[#9CA3AF]">{r.startedAt.slice(0, 10)}</td>
+                      <td className="metric-num px-3.5 py-2 text-right text-[#9CA3AF]">
+                        {r.summary.totalRequests.toLocaleString()}
+                      </td>
+                      <td className="metric-num px-3.5 py-2 text-right text-[#F9FAFB]">
+                        {r.summary.peakVUs.toLocaleString()}
+                      </td>
+                      <td className="metric-num px-3.5 py-2 text-right font-semibold text-[#F59E0B]">
+                        {Math.round(r.summary.p95ResponseTimeMs).toLocaleString()}
+                      </td>
+                      <td
+                        className={`metric-num px-3.5 py-2 text-right font-semibold ${
+                          r.summary.errorRatePct > 0 ? 'text-[#EF4444]' : 'text-[#10B981]'
+                        }`}
+                      >
+                        {r.summary.errorRatePct.toFixed(2)}%
+                      </td>
+                      <td className="px-3.5 py-2 text-right">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteTarget(r);
+                            setDeleteConfirmText('');
+                          }}
+                          className="inline-flex items-center gap-1 rounded border border-[#EF4444]/40 bg-[#EF4444]/10 px-2 py-1 text-[11px] font-medium text-[#FCA5A5] hover:bg-[#EF4444]/20"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {vaultRuns.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-8 text-center text-xs text-[#9CA3AF]">
+                      No registered runs in Performance_Vault.db.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Run Confirmation Modal */}
+      {deleteTarget && (() => {
+        const rawId = deleteTarget.id.replace(/^vault-[a-z]+-/i, '');
+        const canConfirm = deleteConfirmText.trim() === rawId;
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+            onClick={() => !deletingRun && setDeleteTarget(null)}
+          >
+            <div
+              className="w-full max-w-md rounded-lg border border-[#EF4444]/40 bg-[#111827] shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-[#1F2937] px-4 py-3">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#FCA5A5]">
+                  <AlertTriangle className="h-4 w-4 text-[#EF4444]" />
+                  Delete Test Run #{rawId}
+                </div>
+                <button
+                  type="button"
+                  disabled={deletingRun}
+                  onClick={() => setDeleteTarget(null)}
+                  className="rounded p-1 text-[#9CA3AF] hover:bg-[#1F2937] hover:text-[#F9FAFB]"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="space-y-3 p-4 text-xs">
+                <p className="text-[#D1D5DB]">
+                  This will permanently delete <strong className="text-[#F9FAFB]">{deleteTarget.name}</strong> ({deleteTarget.summary.totalRequests.toLocaleString()} samples) from <code className="text-[#22D3EE]">Performance_Vault.db</code> across raw data, aggregated tables, and saved AI summaries.
+                </p>
+                <div>
+                  <label className="mb-1 block text-[11px] text-[#9CA3AF]">
+                    Type <code className="font-bold text-[#FCA5A5]">{rawId}</code> to confirm:
+                  </label>
+                  <input
+                    type="text"
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    autoFocus
+                    placeholder={rawId}
+                    className="w-full rounded-md border border-[#1F2937] bg-[#0B0F19] px-2.5 py-1.5 font-mono text-xs text-[#F9FAFB] focus:border-[#EF4444] focus:outline-none"
+                  />
+                </div>
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={deletingRun}
+                    onClick={() => setDeleteTarget(null)}
+                    className="rounded-md border border-[#1F2937] bg-[#0B0F19] px-3 py-1.5 text-xs text-[#9CA3AF] hover:text-[#F9FAFB]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canConfirm || deletingRun}
+                    onClick={handleConfirmDeleteRun}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-[#EF4444] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[#DC2626] disabled:opacity-40"
+                  >
+                    {deletingRun ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                    Permanently Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* TAB 5: GENERAL & PATHS */}
       {subTab === 'general' && (
         <div className="rounded-lg border border-[#1F2937] bg-[#111827] p-4 space-y-4">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">

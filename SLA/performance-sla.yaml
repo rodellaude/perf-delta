@@ -1,95 +1,63 @@
-# ==============================================================================
-# performance-sla.yaml
-# ------------------------------------------------------------------------------
-# Defines SLA thresholds applied globally across all run_ids in a report.
-# Referenced from config.yaml via: sla_file_path: "SLA/performance-sla.yaml"
-#
-# Governance & Metric Toggles:
-#   show_overall_status : Set to false for an informational report (hides the
-#                         OVERALL STATUS: PASS/FAIL verdict and red fail styling).
-#   enabled             : Per-metric toggle (true/false) on individual rules
-#                         and on response_time_sla.
-#
-# Supported operators: "<=", ">=", "<", ">", "=="
-# ==============================================================================
+# Perf-Delta SLA Thresholds (managed by Perf-Delta Live Settings & Static Report Engine)
 
 show_overall_status: false
-
 sla_rules:
-
   - metric: total_users
     enabled: false
-    label: "Virtual Users"
+    label: Virtual Users
     operator: ">="
     threshold: 1
-    description: "At least 1 virtual user must be recorded for the run to be valid."
-
+    description: At least 1 virtual user must be recorded for the run to be valid.
   - metric: error_rate
     enabled: false
-    label: "Error Rate"
-    operator: "<="
-    threshold: 10.00
+    label: Error Rate
+    operator: <=
+    threshold: 10
     unit: "%"
-    description: "Error rate per scenario must not exceed XX%."
-    application_thresholds: # overrides
-      - app_name: "MyMSD-CPP-X5"
-        threshold: 10.00
-      - app_name: "ECS-X5"
-        threshold: 10.00
-      - app_name: "EOS"
-        threshold: 10.00
-      - app_name: "CPP"
-        threshold: 10.00
-      - app_name: "APIM"
-        threshold: 10.00
-      - app_name: "BPM"
-        threshold: 10.00
-
+    description: Error rate per scenario must not exceed XX%.
+    application_thresholds:
+      - app_name: MyMSD-CPP-X5
+        threshold: 10
+      - app_name: ECS-X5
+        threshold: 10
+      - app_name: EOS
+        threshold: 10
+      - app_name: CPP
+        threshold: 10
+      - app_name: APIM
+        threshold: 10
+      - app_name: BPM
+        threshold: 10
   - metric: throughput
     enabled: false
-    label: "Throughput"
+    label: Throughput
     operator: ">="
     threshold: 5.1
-    unit: "tps"
-    description: "Throughput per application must sustain at least X transactions per second."
-    application_thresholds: # overrides
-      - app_name: "MyMSD-CPP-X5"
-        threshold: 5.0
-      - app_name: "ECS-X5"
+    unit: tps
+    description: Throughput per application must sustain at least X transactions per second.
+    application_thresholds:
+      - app_name: MyMSD-CPP-X5
+        threshold: 5
+      - app_name: ECS-X5
         threshold: 3.9
-      - app_name: "EOS"
+      - app_name: EOS
         threshold: 5.1
-      - app_name: "CPP"
+      - app_name: CPP
         threshold: 5.1
-      - app_name: "APIM"
+      - app_name: APIM
         threshold: 5.1
-      - app_name: "BPM"
+      - app_name: BPM
         threshold: 5.1
-
-
-# ==============================================================================
-# RESPONSE TIME SLA — per-transaction (label) evaluation
-# ------------------------------------------------------------------------------
-# enabled: true/false toggle for transaction response time SLA evaluation
-# metric: which percentile to evaluate — "p90" or "p95" or "avg"
-# default_threshold: applied to ANY transaction not listed in "overrides"
-# tolerance_pct: allows actual value to exceed threshold by this % and still pass
-#                (0 = strict, no tolerance)
-# overrides: per-transaction custom thresholds — only list exceptions here.
-#            New/unlisted transactions automatically use default_threshold.
-#            Only labels that starts-with.
-# ==============================================================================
-
 response_time_sla:
   enabled: false
   metric: p95
-  unit: "ms"
+  unit: ms
   default_threshold: 3000
-
   overrides:
-    - label: "MyMSD"
+    - label: MyMSD
       threshold: 3000
-    - label: "CMS"
+    - label: CMS
       threshold: 100
-    - label: "MyMSD_003_Login_ButtonSelection_Registration"
+    - label: MyMSD_003_Login_ButtonSelection_Registration
       threshold: 2000
+  tolerance_pct: 0

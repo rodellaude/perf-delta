@@ -1,13 +1,25 @@
+[CmdletBinding()]
+param(
+    [int]$Port = 8080,
+    [switch]$Rebuild,
+    [switch]$Dev
+)
+
 ###################################################
-# launch-dashboard.ps1 - Perf-Delta Modern Web App Launcher
-# 1. Refreshes Windows PATH for newly installed Node.js
-# 2. Starts Live DuckDB REST API (dashboard-api on :3001)
-# 3. Starts Cyber-Slate React Dashboard (dashboard-ui on :5173)
+# launch-dashboard.ps1 - Perf-Delta Single-Port Web Server Launcher
+# Default (Single-Port LAN Mode):
+#   - Serves both the React UI (dashboard-ui/dist) and DuckDB REST API on ONE port (default :8080)
+#   - Binds to 0.0.0.0 so teammates & read-only clients can access http://<your-IP>:8080
+# Optional flags:
+#   -Port 8080   Change listening port
+#   -Rebuild     Force rebuild of dashboard-ui before starting
+#   -Dev         Run 2-port Vite HMR dev mode (:5173 + :8080)
 ###################################################
 $ErrorActionPreference = "Stop"
 $Root = $PSScriptRoot
 $ApiDir = Join-Path $Root "dashboard-api"
 $UiDir = Join-Path $Root "dashboard-ui"
+$DistIndex = Join-Path $UiDir "dist\index.html"
 
 # Refresh PATH from Machine + User environment so newly installed Node.js is found
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
@@ -36,16 +48,35 @@ if (-not (Test-Path (Join-Path $UiDir "node_modules"))) {
     try { npm install } finally { Pop-Location }
 }
 
-Write-Host ">>> [3/3] Starting Live DuckDB API (http://localhost:3001) + Cyber-Slate UI (http://localhost:5173)..." -ForegroundColor Green
+$env:DASHBOARD_API_PORT = "$Port"
+$env:DASHBOARD_HOST = "0.0.0.0"
 
-$apiProc = Start-Process -FilePath "node" -ArgumentList "--watch", "server.js" -WorkingDirectory $ApiDir -PassThru -NoNewWindow
+if ($Dev) {
+    Write-Host ">>> [DEV] Starting 2-port HMR mode: API (:$Port) + Vite UI (:5173)..." -ForegroundColor Yellow
+    $apiProc = Start-Process -FilePath "node" -ArgumentList "--watch", "server.js" -WorkingDirectory $ApiDir -PassThru -NoNewWindow
+    Push-Location $UiDir
+    try {
+        npm run dev
+    } finally {
+        Pop-Location
+        if ($apiProc -and -not $apiProc.HasExited) {
+            Stop-Process -Id $apiProc.Id -Force -ErrorAction SilentlyContinue
+        }
+    }
+    exit 0
+}
 
-Push-Location $UiDir
+# Single-Port Mode: build UI if missing or -Rebuild requested
+if ($Rebuild -or -not (Test-Path $DistIndex)) {
+    Write-Host ">>> Building production UI bundle (dashboard-ui/dist)..." -ForegroundColor Cyan
+    Push-Location $UiDir
+    try { npm run build } finally { Pop-Location }
+}
+
+Write-Host ">>> Starting Perf-Delta Single-Port Server on http://localhost:$Port (LAN-accessible)..." -ForegroundColor Green
+Push-Location $ApiDir
 try {
-    npm run dev
+    node --watch server.js
 } finally {
     Pop-Location
-    if ($apiProc -and -not $apiProc.HasExited) {
-        Stop-Process -Id $apiProc.Id -Force -ErrorAction SilentlyContinue
-    }
 }

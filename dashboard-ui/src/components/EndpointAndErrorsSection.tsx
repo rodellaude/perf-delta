@@ -32,7 +32,7 @@ interface EndpointAndErrorsSectionProps {
   httpErrors: HttpErrorGroup[];
   assertionFailures: AssertionFailure[];
   errorRateSlaPct: number;
-  forcedView?: 'endpoints' | 'scenarios' | 'compare';
+  forcedView?: 'applications' | 'endpoints' | 'scenarios' | 'compare';
 }
 
 type SortKey = keyof Pick<
@@ -40,7 +40,7 @@ type SortKey = keyof Pick<
   'endpoint' | 'samples' | 'avg' | 'p90' | 'p95' | 'p99' | 'max' | 'throughput' | 'errorPct'
 >;
 
-type ViewMode = 'split' | 'endpoints' | 'scenarios' | 'compare' | 'errors';
+type ViewMode = 'split' | 'applications' | 'endpoints' | 'scenarios' | 'compare' | 'errors';
 
 function InlineDelta({
   cur,
@@ -418,6 +418,157 @@ export const EndpointAndErrorsSection: React.FC<EndpointAndErrorsSectionProps> =
                       className="px-4 py-8 text-center text-xs text-[#9CA3AF]"
                     >
                       No scenario (thread group) records available for this run. If using the live server, restart <code className="text-[#22D3EE]">launch-dashboard.ps1</code> or register runs with <code className="text-[#22D3EE]">register.ps1</code>.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Applications Breakdown Tab */}
+      {viewMode === 'applications' && (
+        <div className="rounded-lg border border-[#1F2937] bg-[#111827] overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1F2937] px-3.5 py-2.5">
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-[#F9FAFB]">
+                Application Performance Breakdown
+              </h3>
+              <p className="text-[11px] text-[#9CA3AF]">
+                Click an application name to scope the dashboard to that application.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#6B7280]" />
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Filter applications..."
+                  className="w-48 rounded-md border border-[#1F2937] bg-[#0B0F19] py-1 pl-8 pr-2.5 text-xs text-[#F9FAFB] placeholder:text-[#6B7280] focus:border-[#06B6D4] focus:outline-none"
+                />
+              </div>
+              <span className="metric-num text-[11px] text-[#9CA3AF]">
+                {apps.length} app{apps.length === 1 ? '' : 's'}
+              </span>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left text-xs">
+              <thead>
+                <tr className="border-b border-[#1F2937] bg-[#0B0F19]/60 text-[10px] font-semibold uppercase tracking-wider text-[#9CA3AF]">
+                  <th className="px-3 py-2">Application</th>
+                  <th className="px-3 py-2 text-right">Peak VUs</th>
+                  <th className="px-3 py-2 text-right">Samples</th>
+                  <th className="px-3 py-2 text-right">TPS</th>
+                  {baselineRun && <th className="px-3 py-2 text-right">TPS Δ</th>}
+                  <th className="px-3 py-2 text-right">Avg (ms)</th>
+                  <th className="px-3 py-2 text-right">P90 (ms)</th>
+                  <th className="px-3 py-2 text-right">P95 (ms)</th>
+                  {baselineRun && <th className="px-3 py-2 text-right">P95 Δ</th>}
+                  <th className="px-3 py-2 text-right">P99 (ms)</th>
+                  <th className="px-3 py-2 text-right">Error %</th>
+                  <th className="px-3 py-2 text-right">Apdex</th>
+                  <th className="px-3 py-2 text-right">RT SLA</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#1F2937]/70">
+                {apps
+                  .filter((a) => !search.trim() || a.appName.toLowerCase().includes(search.trim().toLowerCase()))
+                  .map((a) => {
+                    const baseApp = baseAppMap.get(a.appName);
+                    const appEps = endpoints.filter((ep) => ep.appName === a.appName);
+                    const totalTx = appEps.length;
+                    const passedTx = appEps.filter((ep) => {
+                      const p95B = ep.rtBreached !== undefined ? ep.rtBreached : rtEnabled && ep.p95 > ep.slaP95Ms;
+                      return !p95B;
+                    }).length;
+                    const apScore = a.apdexScore;
+                    const apColor =
+                      apScore === undefined
+                        ? 'text-[#9CA3AF]'
+                        : apScore >= 0.94
+                        ? 'border-[#10B981]/40 bg-[#10B981]/15 text-[#10B981]'
+                        : apScore >= 0.85
+                        ? 'border-[#06B6D4]/40 bg-[#06B6D4]/15 text-[#22D3EE]'
+                        : apScore >= 0.7
+                        ? 'border-[#F59E0B]/40 bg-[#F59E0B]/15 text-[#F59E0B]'
+                        : 'border-[#EF4444]/40 bg-[#EF4444]/15 text-[#EF4444]';
+                    return (
+                      <tr key={a.appName} className="hover:bg-[#1F2937]/40">
+                        <td className="px-3 py-2">
+                          <button
+                            type="button"
+                            onClick={() => onSelectApp(a.appName)}
+                            className="font-semibold text-[#22D3EE] hover:underline text-left"
+                            title={`Scope dashboard to ${a.appName}`}
+                          >
+                            {a.appName}
+                          </button>
+                        </td>
+                        <td className="metric-num px-3 py-2 text-right text-[#F9FAFB]">
+                          {a.peakVUs.toLocaleString()}
+                        </td>
+                        <td className="metric-num px-3 py-2 text-right text-[#9CA3AF]">
+                          {a.samples.toLocaleString()}
+                        </td>
+                        <td className="metric-num px-3 py-2 text-right text-[#06B6D4]">
+                          {a.throughput.toFixed(2)}
+                        </td>
+                        {baselineRun && (
+                          <td className="px-3 py-2 text-right">
+                            <InlineDelta cur={a.throughput} base={baseApp?.throughput} lowerIsBetter={false} />
+                          </td>
+                        )}
+                        <td className="metric-num px-3 py-2 text-right text-[#9CA3AF]">
+                          {a.avg.toLocaleString()}
+                        </td>
+                        <td className="metric-num px-3 py-2 text-right text-[#9CA3AF]">
+                          {a.p90.toLocaleString()}
+                        </td>
+                        <td className="metric-num px-3 py-2 text-right font-semibold text-[#F59E0B]">
+                          {a.p95.toLocaleString()}
+                        </td>
+                        {baselineRun && (
+                          <td className="px-3 py-2 text-right">
+                            <InlineDelta cur={a.p95} base={baseApp?.p95} lowerIsBetter={true} />
+                          </td>
+                        )}
+                        <td className="metric-num px-3 py-2 text-right text-[#9CA3AF]">
+                          {a.p99.toLocaleString()}
+                        </td>
+                        <td
+                          className={`metric-num px-3 py-2 text-right font-semibold ${
+                            a.errorPct > errorRateSlaPct && errEnabled
+                              ? 'text-[#EF4444]'
+                              : a.errorPct > 0
+                              ? 'text-[#F59E0B]'
+                              : 'text-[#10B981]'
+                          }`}
+                        >
+                          {a.errorPct.toFixed(2)}%
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {apScore !== undefined ? (
+                            <span className={`metric-num inline-flex rounded border px-1.5 py-0.5 text-[10px] font-semibold ${apColor}`}>
+                              {apScore.toFixed(2)} {a.apdexRating ? `(${a.apdexRating})` : ''}
+                            </span>
+                          ) : (
+                            <span className="text-[#6B7280]">—</span>
+                          )}
+                        </td>
+                        <td className="metric-num px-3 py-2 text-right text-[#F9FAFB]">
+                          {totalTx > 0 ? (rtEnabled ? `${passedTx} / ${totalTx}` : `${totalTx} Tx`) : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                {apps.length === 0 && (
+                  <tr>
+                    <td colSpan={baselineRun ? 13 : 11} className="px-4 py-8 text-center text-xs text-[#9CA3AF]">
+                      No application breakdown records available for this run.
                     </td>
                   </tr>
                 )}

@@ -2,6 +2,7 @@ import React from 'react';
 import {
   AlertOctagon,
   BookOpen,
+  Boxes,
   Database,
   GitCompare,
   Layers,
@@ -10,13 +11,16 @@ import {
   PanelLeftOpen,
   Settings,
   Table2,
+  TrendingUp,
 } from 'lucide-react';
 
 export type DashboardTab =
   | 'overview'
-  | 'transactions'
+  | 'applications'
   | 'scenarios'
+  | 'transactions'
   | 'compare'
+  | 'trends'
   | 'errors'
   | 'glossary'
   | 'database'
@@ -27,8 +31,10 @@ interface SideNavProps {
   onSelectTab: (tab: DashboardTab) => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
+  appCount: number;
   endpointCount: number;
   scenarioCount: number;
+  vaultCount: number;
   errorCount: number;
   breachCount: number;
   hasBaseline: boolean;
@@ -40,8 +46,10 @@ export const SideNav: React.FC<SideNavProps> = ({
   onSelectTab,
   collapsed,
   onToggleCollapse,
+  appCount,
   endpointCount,
   scenarioCount,
+  vaultCount,
   errorCount,
   breachCount,
   hasBaseline,
@@ -60,11 +68,11 @@ export const SideNav: React.FC<SideNavProps> = ({
       icon: <LayoutDashboard className="h-4 w-4 shrink-0" />,
     },
     {
-      id: 'transactions',
-      label: 'Transactions',
-      icon: <Table2 className="h-4 w-4 shrink-0" />,
-      badge: breachCount > 0 ? `${breachCount}!` : endpointCount,
-      badgeTone: breachCount > 0 ? 'danger' : 'neutral',
+      id: 'applications',
+      label: 'Applications',
+      icon: <Boxes className="h-4 w-4 shrink-0" />,
+      badge: appCount > 0 ? appCount : undefined,
+      badgeTone: 'neutral',
     },
     {
       id: 'scenarios',
@@ -74,10 +82,24 @@ export const SideNav: React.FC<SideNavProps> = ({
       badgeTone: 'neutral',
     },
     {
+      id: 'transactions',
+      label: 'Transactions',
+      icon: <Table2 className="h-4 w-4 shrink-0" />,
+      badge: breachCount > 0 ? `${breachCount}!` : endpointCount,
+      badgeTone: breachCount > 0 ? 'danger' : 'neutral',
+    },
+    {
       id: 'compare',
       label: hasBaseline ? 'Compare vs Base' : 'App Health',
       icon: <GitCompare className="h-4 w-4 shrink-0" />,
       badge: hasBaseline ? 'Δ' : undefined,
+      badgeTone: 'cyan',
+    },
+    {
+      id: 'trends',
+      label: 'Trends',
+      icon: <TrendingUp className="h-4 w-4 shrink-0" />,
+      badge: vaultCount > 0 ? vaultCount : undefined,
       badgeTone: 'cyan',
     },
     {

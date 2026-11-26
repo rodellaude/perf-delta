@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertOctagon, ArrowRight, Flame } from 'lucide-react';
 import { MOCK_TEST_RUNS } from './data/mockPerformanceData';
 import {
@@ -17,6 +17,7 @@ import { TelemetryChartsRow } from './components/TelemetryChartsRow';
 import { EndpointAndErrorsSection } from './components/EndpointAndErrorsSection';
 import { ErrorsDiagnosticsView } from './components/ErrorsDiagnosticsView';
 import { GlossaryView } from './components/GlossaryView';
+import { TrendsView } from './components/TrendsView';
 import { DatabaseExplorerView } from './components/DatabaseExplorerView';
 import { SettingsView } from './components/SettingsView';
 import { LoginModal } from './components/LoginModal';
@@ -168,16 +169,88 @@ function describeScope(
   return parts.length > 0 ? parts.join(' | ') : 'ALL';
 }
 
+const SHAREABLE_TABS: DashboardTab[] = [
+  'overview',
+  'applications',
+  'scenarios',
+  'transactions',
+  'compare',
+  'trends',
+  'errors',
+  'glossary',
+];
+
+function parseFilterParam(params: URLSearchParams, modeKey: string, valKey: string): MultiFilterState {
+  const rawVals = params.get(valKey);
+  if (!rawVals) return EMPTY_MULTI_FILTER;
+  const mode = params.get(modeKey) === 'exclude' ? 'exclude' : 'include';
+  try {
+    const parsed = JSON.parse(rawVals);
+    if (Array.isArray(parsed)) {
+      return { mode, values: parsed.map(String).filter(Boolean) };
+    }
+  } catch {
+    // support comma-separated fallback
+  }
+  const values = rawVals
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return values.length > 0 ? { mode, values } : EMPTY_MULTI_FILTER;
+}
+
+function matchRunByParam(allRuns: PerformanceTestRun[], param: string | null): string | null {
+  if (!param) return null;
+  const exact = allRuns.find((r) => r.id === param);
+  if (exact) return exact.id;
+  const bySuffix = allRuns.find((r) => r.id.endsWith(`-${param}`));
+  return bySuffix ? bySuffix.id : null;
+}
+
+function readInitialUrlState() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get('tab') as DashboardTab | null;
+    const rangeParam = params.get('range') as TimeRangeOption | null;
+    return {
+      run: params.get('run'),
+      base: params.get('base'),
+      tab: tabParam && SHAREABLE_TABS.includes(tabParam) ? tabParam : ('overview' as DashboardTab),
+      range:
+        rangeParam === '15m' || rangeParam === '1h' || rangeParam === 'full'
+          ? rangeParam
+          : ('full' as TimeRangeOption),
+      appFilter: parseFilterParam(params, 'appMode', 'apps'),
+      scenarioFilter: parseFilterParam(params, 'scenMode', 'scenarios'),
+      endpointFilter: parseFilterParam(params, 'epMode', 'endpoints'),
+    };
+  } catch {
+    return {
+      run: null,
+      base: null,
+      tab: 'overview' as DashboardTab,
+      range: 'full' as TimeRangeOption,
+      appFilter: EMPTY_MULTI_FILTER,
+      scenarioFilter: EMPTY_MULTI_FILTER,
+      endpointFilter: EMPTY_MULTI_FILTER,
+    };
+  }
+}
+
 export const App: React.FC = () => {
+  const initialUrlRef = useRef(readInitialUrlState());
+  const skipNextRunResetRef = useRef(true);
+  const runsLoadedRef = useRef(false);
+
   const [runs, setRuns] = useState<PerformanceTestRun[]>(MOCK_TEST_RUNS);
   const [selectedRunId, setSelectedRunId] = useState<string>(MOCK_TEST_RUNS[0].id);
   const [baselineRunId, setBaselineRunId] = useState<string>('');
-  const [appFilter, setAppFilter] = useState<MultiFilterState>(EMPTY_MULTI_FILTER);
-  const [scenarioFilter, setScenarioFilter] = useState<MultiFilterState>(EMPTY_MULTI_FILTER);
-  const [endpointFilter, setEndpointFilter] = useState<MultiFilterState>(EMPTY_MULTI_FILTER);
+  const [appFilter, setAppFilter] = useState<MultiFilterState>(initialUrlRef.current.appFilter);
+  const [scenarioFilter, setScenarioFilter] = useState<MultiFilterState>(initialUrlRef.current.scenarioFilter);
+  const [endpointFilter, setEndpointFilter] = useState<MultiFilterState>(initialUrlRef.current.endpointFilter);
   const [scopedTimeSeries, setScopedTimeSeries] = useState<TelemetryPoint[] | null>(null);
   const [scopedBaseTimeSeries, setScopedBaseTimeSeries] = useState<TelemetryPoint[] | null>(null);
-  const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
+  const [activeTab, setActiveTab] = useState<DashboardTab>(initialUrlRef.current.tab);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     try {
       return window.localStorage.getItem('perf-delta-sidebar-collapsed') === 'true';
@@ -185,7 +258,7 @@ export const App: React.FC = () => {
       return false;
     }
   });
-  const [timeRange, setTimeRange] = useState<TimeRangeOption>('full');
+  const [timeRange, setTimeRange] = useState<TimeRangeOption>(initialUrlRef.current.range);
   const [isLive, setIsLive] = useState<boolean>(false);
   const [livePoints, setLivePoints] = useState<TelemetryPoint[]>([]);
   const [apiMode, setApiMode] = useState<'live-duckdb-agg' | 'live-duckdb' | 'cached-json' | 'mock-only'>('mock-only');
@@ -221,18 +294,42 @@ export const App: React.FC = () => {
     }
   }, [sidebarCollapsed]);
 
+  const applyInitialSelection = useCallback((loadedVaultRuns: PerformanceTestRun[]) => {
+    const allRuns = [...MOCK_TEST_RUNS, ...loadedVaultRuns];
+    const urlInit = initialUrlRef.current;
+    const matchedRun = matchRunByParam(allRuns, urlInit.run);
+    const chosenRun = matchedRun || loadedVaultRuns[0].id;
+    skipNextRunResetRef.current = true;
+    setSelectedRunId(chosenRun);
+
+    if (urlInit.base === 'none') {
+      setBaselineRunId('');
+    } else {
+      const matchedBase = matchRunByParam(allRuns, urlInit.base);
+      if (matchedBase && matchedBase !== chosenRun) {
+        setBaselineRunId(matchedBase);
+      } else if (loadedVaultRuns.length > 1) {
+        const fallbackBase = loadedVaultRuns.find((r) => r.id !== chosenRun)?.id || '';
+        setBaselineRunId(fallbackBase);
+      }
+    }
+    runsLoadedRef.current = true;
+  }, []);
+
   const loadVaultRuns = useCallback(async (preserveSelection = false) => {
     try {
       const apiRes = await fetch('/api/runs');
       if (apiRes.ok) {
         const payload = (await apiRes.json()) as VaultExportPayload & { mode?: string };
         if (Array.isArray(payload.runs) && payload.runs.length > 0) {
-          setRuns([...MOCK_TEST_RUNS, ...payload.runs]);
+          const allNext = [...MOCK_TEST_RUNS, ...payload.runs];
+          setRuns(allNext);
           if (!preserveSelection) {
-            setSelectedRunId(payload.runs[0].id);
-            if (payload.runs.length > 1) {
-              setBaselineRunId(payload.runs[1].id);
-            }
+            applyInitialSelection(payload.runs);
+          } else {
+            const validIds = new Set(allNext.map((r) => r.id));
+            setSelectedRunId((cur) => (validIds.has(cur) ? cur : payload.runs[0].id));
+            setBaselineRunId((cur) => (cur && validIds.has(cur) ? cur : ''));
           }
           setApiMode(
             payload.mode === 'live-duckdb-agg'
@@ -253,20 +350,24 @@ export const App: React.FC = () => {
       if (res.ok) {
         const payload = (await res.json()) as VaultExportPayload;
         if (Array.isArray(payload.runs) && payload.runs.length > 0) {
-          setRuns([...MOCK_TEST_RUNS, ...payload.runs]);
+          const allNext = [...MOCK_TEST_RUNS, ...payload.runs];
+          setRuns(allNext);
           if (!preserveSelection) {
-            setSelectedRunId(payload.runs[0].id);
-            if (payload.runs.length > 1) {
-              setBaselineRunId(payload.runs[1].id);
-            }
+            applyInitialSelection(payload.runs);
+          } else {
+            const validIds = new Set(allNext.map((r) => r.id));
+            setSelectedRunId((cur) => (validIds.has(cur) ? cur : payload.runs[0].id));
+            setBaselineRunId((cur) => (cur && validIds.has(cur) ? cur : ''));
           }
           setApiMode('cached-json');
+          return;
         }
       }
     } catch {
       // Silently fall back to built-in mock data
     }
-  }, []);
+    runsLoadedRef.current = true;
+  }, [applyInitialSelection]);
 
   useEffect(() => {
     loadVaultRuns(false);
@@ -322,12 +423,60 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     setLivePoints([]);
+    if (skipNextRunResetRef.current) {
+      skipNextRunResetRef.current = false;
+      return;
+    }
     setAppFilter(EMPTY_MULTI_FILTER);
     setScenarioFilter(EMPTY_MULTI_FILTER);
     setEndpointFilter(EMPTY_MULTI_FILTER);
     setScopedTimeSeries(null);
     setScopedBaseTimeSeries(null);
   }, [selectedRunId]);
+
+  const buildShareUrl = useCallback(() => {
+    const params = new URLSearchParams();
+    if (selectedRunId) params.set('run', selectedRunId);
+    params.set('base', baselineRunId || 'none');
+    const safeTab = SHAREABLE_TABS.includes(activeTab) ? activeTab : 'overview';
+    if (safeTab !== 'overview') params.set('tab', safeTab);
+    if (timeRange !== 'full') params.set('range', timeRange);
+    if (appFilter.values.length > 0) {
+      params.set('appMode', appFilter.mode);
+      params.set('apps', JSON.stringify(appFilter.values));
+    }
+    if (scenarioFilter.values.length > 0) {
+      params.set('scenMode', scenarioFilter.mode);
+      params.set('scenarios', JSON.stringify(scenarioFilter.values));
+    }
+    if (endpointFilter.values.length > 0) {
+      params.set('epMode', endpointFilter.mode);
+      params.set('endpoints', JSON.stringify(endpointFilter.values));
+    }
+    const qs = params.toString();
+    return `${window.location.origin}${window.location.pathname}${qs ? `?${qs}` : ''}`;
+  }, [selectedRunId, baselineRunId, activeTab, timeRange, appFilter, scenarioFilter, endpointFilter]);
+
+  useEffect(() => {
+    if (!runsLoadedRef.current) return;
+    try {
+      const nextUrl = buildShareUrl();
+      window.history.replaceState(null, '', nextUrl);
+    } catch {
+      // ignore history errors
+    }
+  }, [buildShareUrl]);
+
+  const handleShareLink = useCallback(async () => {
+    const shareUrl = buildShareUrl();
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      return true;
+    } catch {
+      window.prompt('Copy shareable read-only link:', shareUrl);
+      return true;
+    }
+  }, [buildShareUrl]);
 
   const hasGlobalFilter =
     appFilter.values.length > 0 ||
@@ -435,6 +584,14 @@ export const App: React.FC = () => {
           )
         : null,
     [rawBaselineRun, appFilter, scenarioFilter, endpointFilter, scopedBaseTimeSeries]
+  );
+
+  const scopedVaultRuns = useMemo(
+    () =>
+      runs
+        .filter((r) => r.source === 'duckdb-vault')
+        .map((r) => applyGlobalScope(r, appFilter, scenarioFilter, endpointFilter, null)),
+    [runs, appFilter, scenarioFilter, endpointFilter]
   );
 
   useEffect(() => {
@@ -567,6 +724,7 @@ export const App: React.FC = () => {
     exportStaticHtmlReport({
       run: selectedRun,
       baselineRun,
+      vaultRuns: scopedVaultRuns,
       visibleSeries,
       scopeLabel,
       theme,
@@ -586,6 +744,7 @@ export const App: React.FC = () => {
         onTimeRangeChange={setTimeRange}
         isLive={isLive}
         onToggleLive={() => setIsLive((v) => !v)}
+        onShareLink={handleShareLink}
         onExportHtml={handleExportStaticHtml}
         onExportReport={handleExportReport}
         vaultCount={vaultCount}
@@ -603,8 +762,10 @@ export const App: React.FC = () => {
           onSelectTab={setActiveTab}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
+          appCount={selectedRun.apps?.length ?? 0}
           endpointCount={selectedRun.endpoints.length}
           scenarioCount={selectedRun.scenarios?.length ?? 0}
+          vaultCount={vaultCount}
           errorCount={totalErrorCount}
           breachCount={breachCount}
           hasBaseline={Boolean(baselineRun)}
@@ -811,7 +972,26 @@ export const App: React.FC = () => {
             </>
           )}
 
-          {/* TAB 2: TRANSACTIONS */}
+          {/* TAB 2: APPLICATIONS */}
+          {activeTab === 'applications' && (
+            <EndpointAndErrorsSection
+              run={selectedRun}
+              baselineRun={baselineRun}
+              selectedApp="ALL"
+              onSelectApp={(a) =>
+                setAppFilter(a === 'ALL' ? EMPTY_MULTI_FILTER : { mode: 'include', values: [a] })
+              }
+              endpoints={selectedRun.endpoints}
+              apps={selectedRun.apps}
+              scenarios={selectedRun.scenarios}
+              httpErrors={selectedRun.httpErrors}
+              assertionFailures={selectedRun.assertionFailures}
+              errorRateSlaPct={selectedRun.sla.errorRatePct}
+              forcedView="applications"
+            />
+          )}
+
+          {/* TAB 3: TRANSACTIONS */}
           {activeTab === 'transactions' && (
             <EndpointAndErrorsSection
               run={selectedRun}
@@ -868,7 +1048,16 @@ export const App: React.FC = () => {
             />
           )}
 
-          {/* TAB 5: ERRORS & DIAGNOSTICS */}
+          {/* TAB 5: HISTORICAL TRENDS */}
+          {activeTab === 'trends' && (
+            <TrendsView
+              vaultRuns={scopedVaultRuns}
+              activeRunId={rawSelectedRun.id}
+              theme={theme}
+            />
+          )}
+
+          {/* TAB 6: ERRORS & DIAGNOSTICS */}
           {activeTab === 'errors' && (
             <ErrorsDiagnosticsView
               timeSeries={visibleSeries}
@@ -892,7 +1081,10 @@ export const App: React.FC = () => {
 
           {/* TAB 8: SETTINGS (Admin only) */}
           {activeTab === 'settings' && isAdmin && (
-            <SettingsView onSettingsSaved={() => loadVaultRuns(true)} />
+            <SettingsView
+              vaultRuns={runs.filter((r) => r.source === 'duckdb-vault')}
+              onSettingsSaved={() => loadVaultRuns(true)}
+            />
           )}
         </main>
       </div>

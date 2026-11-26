@@ -1,114 +1,113 @@
-# Project Info
+# Perf-Delta Configuration (managed by Perf-Delta Live Settings & Static Report Engine)
+
 params:
   project: ""
-  version: "v2.0" # Report version displayed in navbar (e.g. v2.0, 1.0.1)
-  report_theme: "cyber-slate" # Static HTML report theme: "cyber-slate" (dark) or "light"
-
-# File Locations (Relative to project root)
-rmd_template: ".engine/dashboard.Rmd"
-# output_dir: "C:\\Projects\\report_tool\\aper-delta-v2\\aper-delta-v2\\Reports" # Where the HTML files will go e.g. //<host>/shared/Performance-JMeter/reports
-# database_path: "C:\\Projects\\report_tool\\aper-delta-v2\\aper-delta-v2\\Data\\Performance_Vault.db" # Update if needed e.g. //<host>/shared/Performance-JMeter/database/Performance_Vault.db
-
-output_dir: "Reports" # Where the HTML files will go e.g. //<host>/shared/Performance-JMeter/reports
-database_path: "Data/Performance_Vault.db" # Update if needed e.g. //<host>/shared/Performance-JMeter/database/Performance_Vault.db
-
-sla_file_path: "SLA/performance-sla.yaml" # Update if needed
-evidence_dir: "Evidence" # Optional folder for manual CPU/Memory screenshots per run (e.g. Evidence/100002/*.png)
+  version: v2.0
+  report_theme: cyber-slate
+rmd_template: .engine/dashboard.Rmd
+output_dir: Reports
+database_path: Data/Performance_Vault.db
+sla_file_path: SLA/performance-sla.yaml
+evidence_dir: Evidence
 ai_summary_enabled: "false"
-# Supports either Amplify or Google Gemini (auto-detected from ai_url):
-#   Gemini example:
-#     ai_url: "https://generativelanguage.googleapis.com/v1beta/models"
-#     ai_model_id: "gemini-2.5-flash"
-#     (uses gemini_api_key in secrets.yaml or GEMINI_API_KEY env var)
-ai_url: "https://amplify.planittesting.com/external/api/completion"
-ai_model_id: "19b89d52-23cf-463d-a5bb-c2896a0f8661"
-
-# Timezone Settings
-# Use standard IANA timezone names (e.g., "Pacific/Auckland", "Australia/Sydney", "UTC", "Asia/Manila", "Europe/London")
-# Set display_timezone to "local" or "" to use the machine's system timezone.
+ai_provider: gemini
+ai_providers:
+  gemini:
+    url: https://generativelanguage.googleapis.com/v1beta/models
+    model_id: gemini-2.5-flash
+  amplify:
+    url: https://amplify.planittesting.com/external/api/completion
+    model_id: 19b89d52-23cf-463d-a5bb-c2896a0f8661
+ai_url: https://generativelanguage.googleapis.com/v1beta/models
+ai_model_id: gemini-2.5-flash
 timezone:
-  source_timezone: "UTC"               # Timezone of raw timestamps stored in DB (JMeter epoch is always "UTC")
-  display_timezone: "Pacific/Auckland" # Target timezone for displaying run dates/times in the report
-  show_timezone_abbr: true             # Append timezone abbreviation (e.g., "NZDT", "NZST", "UTC") to timestamps
-
-# Workload Phase Profile (used in Executive Summary & AI prompts)
-# Leave empty ("") to automatically calculate ramp-up, steady state, and ramp-down from test telemetry.
+  source_timezone: UTC
+  display_timezone: Pacific/Auckland
+  show_timezone_abbr: true
 workload_profile:
-  ramp_up: ""      # Optional override: e.g. "10-minute ramp-up (600s)"
-  steady_state: "" # Optional override: e.g. "60 minutes steady state"
-  ramp_down: ""    # Optional override: e.g. "5-minute ramp-down (300s)"
-
-# Executive AI Summary Prompt Template
-# Supports variables: {app_names}, {env}, {test_type}, {run_date}, {vu_actual}, {duration_desc},
-#                     {ramp_up}, {steady_state}, {ramp_down}, {throughput}, {error_rate},
-#                     {latency}, {current_rt}, {rt_metric}, {baseline_run_id},
-#                     {baseline_comp}, {overall_status}, {breach_cnt}, {worst_label},
-#                     {worst_rt}, {worst_sla}, {flow_theme}, {journey_breakdown},
-#                     {error_breakdown}
-ai_prompt_template: |
+  ramp_up: ""
+  steady_state: ""
+  ramp_down: ""
+ai_prompt_template: >
   Write a clear, natural executive summary of this performance test for project stakeholders.
 
+
   Writing Style:
+
   - Use plain, natural British English (e.g. optimised, prioritised, analysed, behaviour).
+
   - Write the way an experienced performance engineer speaks to a delivery team: clear, concise, and easy to read.
-  - Bold important numbers, journey names, transaction names, and outcomes inline (e.g. **289 virtual users**, **2.31 TPS**, **0.03% error rate**, **1,960 ms**).
+
+  - Bold important numbers, journey names, transaction names, and outcomes inline (e.g. **289 virtual users**, **2.31
+  TPS**, **0.03% error rate**, **1,960 ms**).
+
   - If Ramp-down is "none" or empty, simply do not mention ramp-down at all (never write "without ramp-down").
+
   - Do NOT invent metrics, journeys, or errors not present in the data below.
 
+
   Test Results:
+
   Application : {app_names} ({env})
+
   Test Type   : {test_type}
+
   Run Date    : {run_date}
+
   Workload    : {vu_actual} virtual users ({duration_desc})
+
   Throughput  : {throughput} TPS
+
   Error Rate  : {error_rate}%
+
   Latency     : {latency} ms ({baseline_comp})
+
   Status      : {overall_status}
-  Breaches    : {breach_cnt} ({rt_metric}) — slowest transaction: {worst_label} at {worst_rt} ms vs {worst_sla} ms target
+
+  Breaches    : {breach_cnt} ({rt_metric}) — slowest transaction: {worst_label} at {worst_rt} ms vs {worst_sla} ms
+  target
+
   Main Flows  : {flow_theme}
 
+
   User Journey Breakdown vs Baseline (#{baseline_run_id}):
+
   {journey_breakdown}
 
+
   Error Breakdown:
+
   {error_breakdown}
 
-  Structure (follow this exact layout):
-  PARAGRAPH 1: One concise paragraph (2–3 sentences) summarising how the {test_type} on **{run_date}** ran—virtual users, ramp-up and steady-state profile, average throughput, error rate, and how overall **{rt_metric}** latency compared with baseline run **#{baseline_run_id}**.
 
-  Followed by a blank line and these concise bullets summarising the journey & error findings (omit a bullet only if empty, e.g. if no journeys were stable):
-  - **Improved:** List the user journeys that improved vs baseline from the User Journey Breakdown.
-  - **Broadly Stable:** List any user journeys that remained stable vs baseline.
-  - **Regressions & Slowest Outlier:** List any regressed journeys and note the slowest outlier **{worst_label}** at **{worst_rt} ms** ({rt_metric}).
-  - **Error Summary ({error_rate}% Error Rate):** Concisely summarise the failing transactions and root HTTP/connection errors from the Error Breakdown above (or state that **0 errors** occurred if none).
+  Structure (follow this exact layout):
+
+  PARAGRAPH 1: One concise paragraph (2–3 sentences) summarising how the {test_type} on **{run_date}** ran—virtual
+  users, ramp-up and steady-state profile, average throughput, error rate, and how overall **{rt_metric}** latency
+  compared with baseline run **#{baseline_run_id}**.
+
+
+  Followed by a blank line and these structured nested bullets summarising the journey & error findings (use 2-space
+  indented sub-bullets `  - ` for individual journeys under each category heading; omit a category only if empty):
+
+  - **Improved:**
+    - List each improved user journey vs baseline as a 2-space indented sub-bullet (e.g. `  - **UJ09_WaterQualitySiteDetailsPage:** P95 **1,374 ms** (**-44.7%**)`).
+  - **Broadly Stable:**
+    - List each stable user journey vs baseline as a 2-space indented sub-bullet.
+  - **Regressions & Slowest Outlier:**
+    - List any regressed journeys as 2-space indented sub-bullets and include a sub-bullet for the slowest outlier **{worst_label}** at **{worst_rt} ms** ({rt_metric}).
+  - **Error Summary ({error_rate}% Error Rate):** Concisely summarise the failing transactions and root HTTP/connection
+  errors from the Error Breakdown above (or state that **0 errors** occurred if none).
+
 
   Next steps:
-  - First bullet: Which slow journey, outlier transaction, or error to investigate first (bold the transaction/journey name).
-  - Second bullet: What practical tuning or fix to look into.
-  - Third bullet: Re-running the test under the same load to confirm the fix worked.
 
-# ============================================================
-# Label Exclusions
-#
-# Labels listed here will always be excluded from analysis.
-#
-# The CLI parameter --labelFilterParam acts as an ADDITIONAL
-# exclusion list and does NOT replace these values.
-#
-# Example:
-#   config.yaml:
-#     - c_Thinktime
-#     - Test Action
-#
-#   CLI:
-#     --labelFilterParam=Debug Sampler,TC_Start
-#
-# Effective exclusions:
-#   c_Thinktime
-#   Test Action
-#   Debug Sampler
-#   TC_Start
-# ============================================================
+  - First bullet: Which slow journey, outlier transaction, or error to investigate first (bold the transaction/journey
+  name).
+
+  - Second bullet: What practical tuning or fix to look into.
+
+  - Third bullet: Re-running the test under the same load to confirm the fix worked.
 label_exclusions:
   - c_Thinktime
   - Test Action
@@ -119,38 +118,33 @@ label_exclusions:
   - BDR_pacing
   - TAS_pacing
   - c_CMS_Pacing
-# Canonical Engine & External Tool Mappings
-# All external tools map incoming column headers to canonical JMeter field names during ingestion.
-tool_type: "jmeter"
+tool_type: jmeter
 tool_mappings:
   jmeter:
-    timestamp: "timeStamp"
-    elapsed: "elapsed"
-    label: "label"
-    responseCode: "responseCode"
-    responseMessage: "responseMessage"
-    threadName: "threadName"
-    dataType: "dataType"
-    success: "success"
-    failureMessage: "failureMessage"
-    bytes: "bytes"
-    sentBytes: "sentBytes"
-    grpThreads: "grpThreads"
-    allThreads: "allThreads"
-    URL: "URL"
-    Latency: "Latency"
-    IdleTime: "IdleTime"
-    Connect: "Connect"
-
+    timestamp: timeStamp
+    elapsed: elapsed
+    label: label
+    responseCode: responseCode
+    responseMessage: responseMessage
+    threadName: threadName
+    dataType: dataType
+    success: success
+    failureMessage: failureMessage
+    bytes: bytes
+    sentBytes: sentBytes
+    grpThreads: grpThreads
+    allThreads: allThreads
+    URL: URL
+    Latency: Latency
+    IdleTime: IdleTime
+    Connect: Connect
   neoload:
-    timestamp: "Time" # NeoLoad raw files usually call this 'Time' or 'Date'
-    elapsed: "Response time" # NeoLoad raw transactional files often use 'Duration' instead of 'Response time'
-    label: "Element" # NeoLoad raw exports often use 'User Path Element' instead of 'Element'
-    success: "Success"
-    threadName: "Virtual User ID"
-    userPath: "User Path"
-    population: "Population"
-
-# Reporting Settings
+    timestamp: Time
+    elapsed: Response time
+    label: Element
+    success: Success
+    threadName: Virtual User ID
+    userPath: User Path
+    population: Population
 bin_size: 60
-user_action_filter: ".*" # Regex to include all transactions
+user_action_filter: .*

@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Activity,
+  Check,
   ChevronDown,
   Clock,
   Database,
@@ -10,6 +11,7 @@ import {
   LogOut,
   Moon,
   Radio,
+  Share2,
   ShieldCheck,
   Sun,
 } from 'lucide-react';
@@ -25,6 +27,7 @@ interface TopNavBarProps {
   onTimeRangeChange: (range: TimeRangeOption) => void;
   isLive: boolean;
   onToggleLive: () => void;
+  onShareLink: () => Promise<boolean> | boolean;
   onExportHtml: () => void;
   onExportReport: () => void;
   vaultCount: number;
@@ -52,6 +55,7 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
   onTimeRangeChange,
   isLive,
   onToggleLive,
+  onShareLink,
   onExportHtml,
   onExportReport,
   vaultCount,
@@ -63,6 +67,15 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
   onLogout,
 }) => {
   const isVaultRun = selectedRun.source === 'duckdb-vault';
+  const [copiedShare, setCopiedShare] = useState(false);
+
+  const handleShareClick = async () => {
+    const ok = await onShareLink();
+    if (ok) {
+      setCopiedShare(true);
+      window.setTimeout(() => setCopiedShare(false), 1800);
+    }
+  };
 
   return (
     <header className="sticky top-0 z-40 border-b border-[#1F2937] bg-[#0B0F19]/95 backdrop-blur-md">
@@ -221,6 +234,21 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
               <Moon className="h-3 w-3 text-[#6366F1]" />
             )}
             <span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
+          </button>
+
+          {/* Copy Read-Only Share Link */}
+          <button
+            type="button"
+            onClick={handleShareClick}
+            className={`no-print inline-flex shrink-0 items-center gap-1 rounded border px-2 py-1 text-[11px] font-medium whitespace-nowrap transition-colors ${
+              copiedShare
+                ? 'border-[#10B981]/50 bg-[#10B981]/15 text-[#34D399]'
+                : 'border-[#1F2937] bg-[#111827] text-[#9CA3AF] hover:border-[#06B6D4]/50 hover:text-[#22D3EE]'
+            }`}
+            title="Copy shareable read-only link for this exact run, baseline, tab, and filter scope"
+          >
+            {copiedShare ? <Check className="h-3 w-3" /> : <Share2 className="h-3 w-3" />}
+            <span>{copiedShare ? 'Copied' : 'Share'}</span>
           </button>
 
           {/* Export Static HTML Report */}

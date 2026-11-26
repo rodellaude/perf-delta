@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
@@ -9,7 +10,9 @@ import yaml from 'js-yaml';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '..');
-const PORT = Number(process.env.DASHBOARD_API_PORT || 3001);
+const PORT = Number(process.env.DASHBOARD_API_PORT || process.env.PORT || 8080);
+const HOST = process.env.DASHBOARD_HOST || '0.0.0.0';
+const UI_DIST_DIR = path.join(PROJECT_ROOT, 'dashboard-ui', 'dist');
 
 let DuckDBInstance = null;
 try {
@@ -1112,6 +1115,57 @@ app.get('/api/runs', async (_req, res) => {
   }
 });
 
+app.delete('/api/runs/:runId', requireAdmin, async (req, res) => {
+  const { dbPath } = loadConfig();
+  if (!DuckDBInstance || !fs.existsSync(dbPath)) {
+    return res.status(503).json({ ok: false, error: 'DuckDB vault is unavailable.' });
+  }
+  const fullId = String(req.params.runId || '').trim();
+  const rawRunId = fullId.replace(/^vault-[a-z]+-/i, '').trim();
+  if (!rawRunId) {
+    return res.status(400).json({ ok: false, error: 'Invalid runId.' });
+  }
+
+  let instance = null;
+  let conn = null;
+  try {
+    instance = await DuckDBInstance.create(dbPath);
+    conn = await instance.connect();
+    const existingTables = (await queryAll(conn, 'SHOW TABLES')).map((r) => String(r.name));
+    const ridEsc = rawRunId.replace(/'/g, "''");
+    const fullEsc = fullId.replace(/'/g, "''");
+
+    const targetTables = [
+      'performance_history',
+      'performance_history_jmeter',
+      'performance_history_neoload',
+      ...AGG_TABLES,
+    ];
+    const tablesCleared = [];
+    for (const tbl of targetTables) {
+      if (existingTables.includes(tbl)) {
+        await conn.run(`DELETE FROM "${tbl}" WHERE CAST(run_id AS VARCHAR) = '${ridEsc}'`);
+        tablesCleared.push(tbl);
+      }
+    }
+    if (existingTables.includes('ai_summaries')) {
+      await conn.run(
+        `DELETE FROM ai_summaries WHERE run_id = '${ridEsc}' OR run_id = '${fullEsc}' OR run_id LIKE '%-${ridEsc}' OR baseline_run_id = '${ridEsc}' OR baseline_run_id = '${fullEsc}' OR baseline_run_id LIKE '%-${ridEsc}'`
+      );
+      tablesCleared.push('ai_summaries');
+    }
+    await conn.run('CHECKPOINT;');
+    console.log(`[dashboard-api] Admin '${req.adminUser}' deleted run '${rawRunId}' from ${tablesCleared.join(', ')}`);
+    return res.json({ ok: true, deletedRunId: rawRunId, tablesCleared });
+  } catch (err) {
+    console.error('[dashboard-api] Delete run failed:', err.message);
+    return res.status(500).json({ ok: false, error: err?.message || 'Failed to delete run.' });
+  } finally {
+    if (conn) conn.closeSync();
+    if (instance) instance.closeSync();
+  }
+});
+
 function parseListParam(val) {
   if (!val) return [];
   if (Array.isArray(val)) return val.map(String).filter((s) => s && s !== 'ALL');
@@ -1353,12 +1407,10 @@ app.post('/api/ai-summary', requireAdmin, async (req, res) => {
     const secPath = path.join(PROJECT_ROOT, 'secrets.yaml');
     const sec = fs.existsSync(secPath) ? yaml.load(fs.readFileSync(secPath, 'utf8')) || {} : {};
 
-    const aiUrl = String(cfg.ai_url || 'https://generativelanguage.googleapis.com/v1beta/models').trim();
-    const isGemini = /generativelanguage\.googleapis\.com/i.test(aiUrl) || Boolean(sec.gemini_api_key || process.env.GEMINI_API_KEY);
-    const effectiveUrl = isGemini && !/generativelanguage\.googleapis\.com/i.test(aiUrl) && !sec.amplify_token
-      ? 'https://generativelanguage.googleapis.com/v1beta/models'
-      : aiUrl;
-    const useGemini = /generativelanguage\.googleapis\.com/i.test(effectiveUrl);
+    const aiConfig = resolveActiveAiConfig(cfg);
+    const useGemini = aiConfig.provider === 'gemini';
+    const effectiveUrl = aiConfig.url;
+    const aiModel = aiConfig.modelId;
 
     const apiKey = useGemini
       ? String(sec.gemini_api_key || process.env.GEMINI_API_KEY || '').trim()
@@ -1368,36 +1420,70 @@ app.post('/api/ai-summary', requireAdmin, async (req, res) => {
       return res.json({
         ok: false,
         reason: useGemini
-          ? 'No Gemini API key found. Add gemini_api_key to secrets.yaml or set GEMINI_API_KEY.'
-          : 'No Amplify API token found. Add amplify_token to secrets.yaml.',
+          ? 'Active AI provider is Google Gemini, but no Gemini API key is configured. Add it in Settings → AI Executive Summary (or set GEMINI_API_KEY).'
+          : 'Active AI provider is Planit Amplify, but no Amplify API token is configured. Add it in Settings → AI Executive Summary.',
       });
     }
 
-    const aiModel = useGemini
-      ? (/gemini/i.test(String(cfg.ai_model_id || '')) ? String(cfg.ai_model_id).trim() : 'gemini-2.5-flash')
-      : String(cfg.ai_model_id || '19b89d52-23cf-463d-a5bb-c2896a0f8661').trim();
-
     const body = req.body || {};
-    const prompt = [
-      'Write a clear, concise executive summary of this performance test for engineering and project stakeholders.',
-      'Use plain natural British English. Bold key metrics, scenario names, and transaction names with **...**.',
-      'Do NOT include any preamble (start directly with Paragraph 1).',
-      'Output 2 concise paragraphs (2-3 sentences each), followed by a line "Next steps:" and 3 practical bullet points starting with "- ".',
-      '',
-      `Run: ${body.runName || 'Performance Run'}`,
-      `Scope: ${body.scopeLabel || 'Full Run'}`,
-      `Duration: ${body.durationMinutes || 0} min | Peak VUs: ${body.peakVUs || 0} | Requests: ${body.totalRequests || 0}`,
-      `Throughput: ${body.avgThroughputRps || 0} req/s | P95: ${body.p95ResponseTimeMs || 0} ms | Error Rate: ${body.errorRatePct || 0}%`,
-      `Apdex: ${body.apdexScore ?? 'N/A'} (${body.apdexRating || 'N/A'}) | SLA Status: ${body.overallStatus || 'INFO'}`,
-      body.baselineName
-        ? `Baseline: ${body.baselineName} (P95: ${body.baselineP95Ms} ms, TPS: ${body.baselineTps} req/s, Error Rate: ${body.baselineErrorPct}%)`
-        : 'Baseline: Standalone single-run report (no baseline).',
-      body.slowestEndpoint
-        ? `Slowest Transaction: ${body.slowestEndpoint.name} at ${body.slowestEndpoint.p95} ms (SLA: ${body.slowestEndpoint.sla} ms)`
-        : '',
-      body.scenarioSummary ? `Scenarios:\n${body.scenarioSummary}` : '',
-      body.errorSummary ? `Errors:\n${body.errorSummary}` : '',
-    ].filter(Boolean).join('\n');
+    const vars = {
+      app_names: String(body.appNames || body.runName || 'Application'),
+      env: String(body.env || 'Test'),
+      test_type: String(body.testType || 'Performance Test'),
+      run_date: String(body.runDate || new Date().toISOString().slice(0, 10)),
+      vu_actual: String(body.peakVUs ?? 0),
+      duration_desc: String(body.durationDesc || `${body.durationMinutes || 0} min`),
+      ramp_up: String(body.rampUp || ''),
+      steady_state: String(body.steadyState || ''),
+      ramp_down: String(body.rampDown || ''),
+      throughput: String(body.avgThroughputRps ?? 0),
+      error_rate: String(body.errorRatePct ?? 0),
+      latency: String(body.p95ResponseTimeMs ?? 0),
+      current_rt: String(body.p95ResponseTimeMs ?? 0),
+      rt_metric: String(body.rtMetric || 'P95'),
+      baseline_run_id: String(body.baselineRunId || 'N/A'),
+      baseline_comp: String(
+        body.baselineComp ||
+          (body.baselineName
+            ? `vs ${body.baselineName} (${body.baselineP95Ms} ms)`
+            : 'standalone single-run, no baseline')
+      ),
+      overall_status: String(body.overallStatus || 'INFO'),
+      breach_cnt: String(body.breachCount ?? 0),
+      worst_label: String(body.slowestEndpoint?.name || 'N/A'),
+      worst_rt: String(body.slowestEndpoint?.p95 ?? 0),
+      worst_sla: String(body.slowestEndpoint?.sla ?? 3000),
+      flow_theme: String(body.flowTheme || body.scopeLabel || 'Full Run'),
+      journey_breakdown: String(body.journeyBreakdown || body.scenarioSummary || 'No scenario breakdown available.'),
+      error_breakdown: String(body.errorBreakdown || body.errorSummary || '0 errors recorded.'),
+    };
+
+    const rawTemplate = String(cfg.ai_prompt_template || '').trim();
+    let prompt = '';
+    if (rawTemplate) {
+      prompt = rawTemplate.replace(/\{([a-z0-9_]+)\}/gi, (match, key) =>
+        Object.prototype.hasOwnProperty.call(vars, key) ? vars[key] : match
+      );
+      if (body.scopeLabel && body.scopeLabel !== 'ALL' && body.scopeLabel !== 'Full Run') {
+        prompt += `\n\nActive Filter Scope: ${body.scopeLabel}`;
+      }
+      if (!body.baselineName) {
+        prompt += '\n\nNote: This is a standalone single-run report with no baseline; omit baseline comparisons and summarise current performance directly.';
+      }
+    } else {
+      prompt = [
+        'Write a clear, natural executive summary of this performance test for project stakeholders.',
+        'Use plain natural British English. Bold key metrics, scenario names, and transaction names with **...**.',
+        'Do NOT include any preamble.',
+        'Output Paragraph 1 (2-3 sentences), followed by concise bullets starting with "- ", then "Next steps:" and 3 bullet points starting with "- ".',
+        '',
+        `Application: ${vars.app_names} (${vars.env}) | Test Type: ${vars.test_type} | Run Date: ${vars.run_date}`,
+        `Workload: ${vars.vu_actual} VUs (${vars.duration_desc}) | Throughput: ${vars.throughput} TPS | Error Rate: ${vars.error_rate}% | ${vars.rt_metric}: ${vars.latency} ms (${vars.baseline_comp})`,
+        `Status: ${vars.overall_status} | Breaches: ${vars.breach_cnt} | Slowest: ${vars.worst_label} at ${vars.worst_rt} ms vs ${vars.worst_sla} ms`,
+        `User Journey Breakdown:\n${vars.journey_breakdown}`,
+        `Error Breakdown:\n${vars.error_breakdown}`,
+      ].join('\n');
+    }
 
     let rawText = '';
     if (useGemini) {
@@ -1447,14 +1533,66 @@ app.post('/api/ai-summary', requireAdmin, async (req, res) => {
       return res.json({ ok: false, reason: 'AI provider returned an empty response.' });
     }
 
+    // Strip reasoning/thinking blocks emitted by Amplify reasoning models (may emit multiple sections separated by "---")
+    rawText = rawText
+      .replace(/<(?:think|thinking|reasoning)>[\s\S]*?<\/(?:think|thinking|reasoning)>/gi, '')
+      .trim();
+    const hrSections = rawText.split(/\r?\n\s*---+\s*\r?\n/);
+    if (hrSections.length > 1) {
+      const reasoningRe =
+        /\b(I'm|I’m|I will|I'll|I’ll|I need to|I can|I'd|I’d|Let me|Planning for|Drafting|Deciding on|Formatting|Creating a|Thinking)\b/i;
+      while (hrSections.length > 1 && reasoningRe.test(hrSections[0])) {
+        hrSections.shift();
+      }
+      rawText = hrSections.join('\n\n').trim();
+    }
+
     const parts = rawText.split(/\n\s*[*_#]*\s*(?:Next steps|Recommended actions|Key actions)[*_:\s]*\r?\n/i);
     const narrativePart = (parts[0] || rawText).trim();
     const stepsPart = (parts[1] || '').trim();
 
-    const paragraphs = narrativePart
-      .split(/\n\s*\n/)
-      .map((p) => p.replace(/^[-*•]\s+/, '').trim())
-      .filter((p) => p.length > 0 && !/^(here('s| is)|below is|executive summary)/i.test(p));
+    // Parse narrative preserving Paragraph 1 and individual "- " findings bullets (Improved / Broadly Stable / Regressions / Error Summary)
+    const rawLines = narrativePart.split(/\r?\n/);
+    const paragraphs = [];
+    let currentPara = [];
+    const flushPara = () => {
+      if (currentPara.length === 0) return;
+      const joined = currentPara
+        .join(' ')
+        .replace(/^[*_#]*\s*PARAGRAPH\s*\d+\s*[:\-–—]?\s*[*_#]*\s*/i, '')
+        .trim();
+      currentPara = [];
+      if (joined && !/^(here('s| is)|below is|executive summary\b)/i.test(joined)) {
+        paragraphs.push(joined);
+      }
+    };
+
+    let lastWasHeadingBullet = false;
+    for (const rawLine of rawLines) {
+      const indentMatch = rawLine.match(/^(\s*)/);
+      const indentLen = indentMatch ? indentMatch[1].replace(/\t/g, '  ').length : 0;
+      const line = rawLine.trim();
+      if (!line) {
+        flushPara();
+        continue;
+      }
+      if (/^([-*•])\s+/.test(line)) {
+        flushPara();
+        const bulletText = line.replace(/^([-*•])\s+/, '').trim();
+        if (bulletText) {
+          const isBoldHeading = /^\*\*[^*]+:\*\*\s*$/.test(bulletText) || /^[^:]{2,40}:\s*$/.test(bulletText);
+          const isSub = indentLen >= 2 || (lastWasHeadingBullet && !/^\*\*[^*]+:\*\*/.test(bulletText));
+          paragraphs.push(isSub ? `  - ${bulletText}` : `- ${bulletText}`);
+          if (!isSub) {
+            lastWasHeadingBullet = isBoldHeading;
+          }
+        }
+      } else {
+        lastWasHeadingBullet = false;
+        currentPara.push(line);
+      }
+    }
+    flushPara();
 
     const nextSteps = stepsPart
       .split(/\r?\n/)
@@ -1524,6 +1662,54 @@ function resolveSlaPath(cfg) {
   return path.isAbsolute(rawSla) ? rawSla : path.resolve(PROJECT_ROOT, rawSla);
 }
 
+const DEFAULT_GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+const DEFAULT_AMPLIFY_URL = 'https://amplify.planittesting.com/external/api/completion';
+const DEFAULT_AMPLIFY_MODEL = '19b89d52-23cf-463d-a5bb-c2896a0f8661';
+
+function resolveAiProviders(cfg) {
+  const legacyUrl = String(cfg?.ai_url || '').trim();
+  const legacyModel = String(cfg?.ai_model_id || '').trim();
+  const legacyIsGemini = /generativelanguage\.googleapis\.com/i.test(legacyUrl);
+
+  const explicit = String(cfg?.ai_provider || '').trim().toLowerCase();
+  const provider =
+    explicit === 'gemini' || explicit === 'amplify'
+      ? explicit
+      : legacyIsGemini
+      ? 'gemini'
+      : 'amplify';
+
+  const gCfg = cfg?.ai_providers?.gemini || {};
+  const aCfg = cfg?.ai_providers?.amplify || {};
+
+  const providers = {
+    gemini: {
+      url: String(gCfg.url || (legacyIsGemini && legacyUrl ? legacyUrl : DEFAULT_GEMINI_URL)).trim(),
+      modelId: String(
+        gCfg.model_id || (legacyIsGemini && legacyModel ? legacyModel : DEFAULT_GEMINI_MODEL)
+      ).trim(),
+    },
+    amplify: {
+      url: String(aCfg.url || (!legacyIsGemini && legacyUrl ? legacyUrl : DEFAULT_AMPLIFY_URL)).trim(),
+      modelId: String(
+        aCfg.model_id || (!legacyIsGemini && legacyModel ? legacyModel : DEFAULT_AMPLIFY_MODEL)
+      ).trim(),
+    },
+  };
+
+  return {
+    provider,
+    providers,
+    url: providers[provider].url,
+    modelId: providers[provider].modelId,
+  };
+}
+
+function resolveActiveAiConfig(cfg) {
+  return resolveAiProviders(cfg);
+}
+
 function buildSettingsPayload() {
   const cfgPath = path.join(PROJECT_ROOT, 'config.yaml');
   const cfg = fs.existsSync(cfgPath) ? yaml.load(fs.readFileSync(cfgPath, 'utf8')) || {} : {};
@@ -1532,8 +1718,7 @@ function buildSettingsPayload() {
   const secPath = path.join(PROJECT_ROOT, 'secrets.yaml');
   const sec = fs.existsSync(secPath) ? yaml.load(fs.readFileSync(secPath, 'utf8')) || {} : {};
 
-  const aiUrl = String(cfg.ai_url || 'https://generativelanguage.googleapis.com/v1beta/models').trim();
-  const provider = /generativelanguage\.googleapis\.com/i.test(aiUrl) ? 'gemini' : 'amplify';
+  const aiResolved = resolveAiProviders(cfg);
 
   const rtCfg = slaCfg?.response_time_sla || {};
   const rules = Array.isArray(slaCfg?.sla_rules) ? slaCfg.sla_rules : [];
@@ -1556,9 +1741,10 @@ function buildSettingsPayload() {
       outputDir: String(cfg?.output_dir ?? 'Reports'),
     },
     ai: {
-      provider,
-      aiUrl,
-      aiModelId: String(cfg.ai_model_id || (provider === 'gemini' ? 'gemini-2.5-flash' : '')),
+      provider: aiResolved.provider,
+      aiUrl: aiResolved.url,
+      aiModelId: aiResolved.modelId,
+      providers: aiResolved.providers,
       aiPromptTemplate: String(cfg.ai_prompt_template || ''),
       hasGeminiKey: Boolean(geminiKey),
       geminiKeyMasked: maskSecret(geminiKey),
@@ -1634,8 +1820,20 @@ app.put('/api/settings', requireAdmin, (req, res) => {
 
     if (body.ai) {
       const a = body.ai;
-      if (a.aiUrl !== undefined && String(a.aiUrl).trim()) cfg.ai_url = String(a.aiUrl).trim();
-      if (a.aiModelId !== undefined && String(a.aiModelId).trim()) cfg.ai_model_id = String(a.aiModelId).trim();
+      const prev = resolveAiProviders(cfg);
+      const chosenProvider = a.provider === 'amplify' ? 'amplify' : a.provider === 'gemini' ? 'gemini' : prev.provider;
+      const nextGemini = {
+        url: String(a.providers?.gemini?.url ?? (chosenProvider === 'gemini' ? a.aiUrl : prev.providers.gemini.url) ?? DEFAULT_GEMINI_URL).trim() || DEFAULT_GEMINI_URL,
+        model_id: String(a.providers?.gemini?.modelId ?? (chosenProvider === 'gemini' ? a.aiModelId : prev.providers.gemini.modelId) ?? DEFAULT_GEMINI_MODEL).trim() || DEFAULT_GEMINI_MODEL,
+      };
+      const nextAmplify = {
+        url: String(a.providers?.amplify?.url ?? (chosenProvider === 'amplify' ? a.aiUrl : prev.providers.amplify.url) ?? DEFAULT_AMPLIFY_URL).trim() || DEFAULT_AMPLIFY_URL,
+        model_id: String(a.providers?.amplify?.modelId ?? (chosenProvider === 'amplify' ? a.aiModelId : prev.providers.amplify.modelId) ?? DEFAULT_AMPLIFY_MODEL).trim() || DEFAULT_AMPLIFY_MODEL,
+      };
+      cfg.ai_provider = chosenProvider;
+      cfg.ai_providers = { gemini: nextGemini, amplify: nextAmplify };
+      cfg.ai_url = chosenProvider === 'gemini' ? nextGemini.url : nextAmplify.url;
+      cfg.ai_model_id = chosenProvider === 'gemini' ? nextGemini.model_id : nextAmplify.model_id;
       if (a.aiPromptTemplate !== undefined && String(a.aiPromptTemplate).trim()) {
         cfg.ai_prompt_template = String(a.aiPromptTemplate);
       }
@@ -1752,13 +1950,14 @@ app.post('/api/settings/test-ai', requireAdmin, async (req, res) => {
     const secPath = path.join(PROJECT_ROOT, 'secrets.yaml');
     const sec = fs.existsSync(secPath) ? yaml.load(fs.readFileSync(secPath, 'utf8')) || {} : {};
 
-    const aiUrl = String(body.aiUrl || cfg.ai_url || 'https://generativelanguage.googleapis.com/v1beta/models').trim();
-    const useGemini = body.provider
-      ? body.provider === 'gemini'
-      : /generativelanguage\.googleapis\.com/i.test(aiUrl);
-    const aiModel = String(
-      body.aiModelId || cfg.ai_model_id || (useGemini ? 'gemini-2.5-flash' : '19b89d52-23cf-463d-a5bb-c2896a0f8661')
-    ).trim();
+    const resolved = resolveAiProviders(cfg);
+    const chosenProvider =
+      body.provider === 'gemini' || body.provider === 'amplify'
+        ? body.provider
+        : resolved.provider;
+    const useGemini = chosenProvider === 'gemini';
+    const aiUrl = String(body.aiUrl || resolved.providers[chosenProvider].url).trim();
+    const aiModel = String(body.aiModelId || resolved.providers[chosenProvider].modelId).trim();
 
     const apiKey = useGemini
       ? String(body.geminiApiKey || sec.gemini_api_key || process.env.GEMINI_API_KEY || '').trim()
@@ -1978,7 +2177,38 @@ app.post('/api/db/query', requireAdmin, async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`>>> [Perf-Delta API] Listening on http://localhost:${PORT}`);
-  console.log(`>>> [Perf-Delta API] DuckDB Native Driver: ${DuckDBInstance ? 'ENABLED' : 'FALLBACK (vault-runs.json)'}`);
+// ============================================================
+// SINGLE-PORT STATIC UI HOSTING (serves dashboard-ui/dist)
+// ============================================================
+
+if (fs.existsSync(UI_DIST_DIR)) {
+  app.use(express.static(UI_DIST_DIR));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    return res.sendFile(path.join(UI_DIST_DIR, 'index.html'));
+  });
+}
+
+function getLanAddresses() {
+  const nets = os.networkInterfaces();
+  const addrs = [];
+  for (const list of Object.values(nets)) {
+    if (!Array.isArray(list)) continue;
+    for (const net of list) {
+      if (net.family === 'IPv4' && !net.internal) {
+        addrs.push(net.address);
+      }
+    }
+  }
+  return addrs;
+}
+
+app.listen(PORT, HOST, () => {
+  const uiServed = fs.existsSync(UI_DIST_DIR);
+  console.log(`>>> [Perf-Delta] Single-Port Server listening on http://localhost:${PORT}`);
+  for (const ip of getLanAddresses()) {
+    console.log(`>>> [Perf-Delta] LAN Share URL: http://${ip}:${PORT}`);
+  }
+  console.log(`>>> [Perf-Delta] Built UI (dashboard-ui/dist): ${uiServed ? 'SERVING' : 'NOT BUILT (run npm run build in dashboard-ui)'}`);
+  console.log(`>>> [Perf-Delta] DuckDB Native Driver: ${DuckDBInstance ? 'ENABLED' : 'FALLBACK (vault-runs.json)'}`);
 });
