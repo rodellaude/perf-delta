@@ -14,6 +14,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import { PerformanceTestRun } from '../types/performance';
@@ -121,6 +122,64 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ vaultRuns, onSetting
   const [newOvLabel, setNewOvLabel] = useState('');
   const [newOvThreshold, setNewOvThreshold] = useState('2000');
   const [showPromptEditor, setShowPromptEditor] = useState(false);
+
+  // Register new run state (Upload CSVs or Server Folder Path)
+  const [regMode, setRegMode] = useState<'upload' | 'folder'>('upload');
+  const [regTool, setRegTool] = useState<'jmeter' | 'neoload'>('jmeter');
+  const [regFiles, setRegFiles] = useState<File[]>([]);
+  const [regFolder, setRegFolder] = useState('');
+  const [registering, setRegistering] = useState(false);
+  const [regStatus, setRegStatus] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const handleRegisterRun = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRegStatus(null);
+    setRegistering(true);
+    try {
+      let res: Response;
+      if (regMode === 'upload') {
+        if (regFiles.length === 0) {
+          setRegStatus({ ok: false, text: 'Select at least one .csv file to upload.' });
+          setRegistering(false);
+          return;
+        }
+        const fd = new FormData();
+        fd.append('toolType', regTool);
+        for (const f of regFiles) fd.append('files', f);
+        res = await fetch('/api/runs/register', { method: 'POST', body: fd });
+      } else {
+        if (!regFolder.trim()) {
+          setRegStatus({ ok: false, text: 'Enter a valid folder path on the server.' });
+          setRegistering(false);
+          return;
+        }
+        res = await fetch('/api/runs/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ folderPath: regFolder.trim(), toolType: regTool }),
+        });
+      }
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setRegStatus({ ok: false, text: data.error || `HTTP ${res.status}` });
+      } else {
+        setRegFiles([]);
+        setRegFolder('');
+        await onSettingsSaved();
+        setRegStatus({
+          ok: true,
+          text: `Registered #${data.runId} (${data.projectName} - ${data.testName}): ${Number(data.totalSamples).toLocaleString()} samples, Peak ${data.peakVUs} VUs, P95 ${data.p95Rt} ms in ${(data.elapsedMs / 1000).toFixed(2)}s.`,
+        });
+      }
+    } catch (err) {
+      setRegStatus({
+        ok: false,
+        text: err instanceof Error ? err.message : 'Network error registering run.',
+      });
+    } finally {
+      setRegistering(false);
+    }
+  };
 
   // Delete run modal state
   const [deleteTarget, setDeleteTarget] = useState<PerformanceTestRun | null>(null);
@@ -1193,7 +1252,106 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ vaultRuns, onSetting
 
       {/* TAB 4: MANAGE RUNS */}
       {subTab === 'runs' && (
-        <div className="rounded-lg border border-[#1F2937] bg-[#111827] overflow-hidden">
+        <div className="space-y-4">
+          {/* Register New Run Card */}
+          <form
+            onSubmit={handleRegisterRun}
+            className="rounded-lg border border-[#1F2937] bg-[#111827] p-4 space-y-3"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1F2937] pb-2.5">
+              <div>
+                <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-[#F9FAFB]">
+                  <Upload className="h-3.5 w-3.5 text-[#06B6D4]" />
+                  Register New Test Run (Pure Node.js / DuckDB)
+                </h3>
+                <p className="text-[11px] text-[#9CA3AF]">
+                  CSV naming convention: <code className="text-[#22D3EE]">&lt;Project&gt;_&lt;TestType&gt;_&lt;App&gt;_&lt;BuildId&gt;_&lt;Timestamp&gt;.csv</code>
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="inline-flex rounded border border-[#1F2937] bg-[#0B0F19] p-0.5 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => setRegMode('upload')}
+                    className={`rounded px-2 py-0.5 font-medium ${
+                      regMode === 'upload' ? 'bg-[#06B6D4]/20 text-[#22D3EE]' : 'text-[#9CA3AF]'
+                    }`}
+                  >
+                    Upload CSVs
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRegMode('folder')}
+                    className={`rounded px-2 py-0.5 font-medium ${
+                      regMode === 'folder' ? 'bg-[#06B6D4]/20 text-[#22D3EE]' : 'text-[#9CA3AF]'
+                    }`}
+                  >
+                    Server Folder
+                  </button>
+                </div>
+                <select
+                  value={regTool}
+                  onChange={(e) => setRegTool(e.target.value === 'neoload' ? 'neoload' : 'jmeter')}
+                  className="rounded border border-[#1F2937] bg-[#0B0F19] px-2 py-1 text-[11px] text-[#F9FAFB] focus:border-[#06B6D4] focus:outline-none"
+                >
+                  <option value="jmeter">JMeter</option>
+                  <option value="neoload">NeoLoad</option>
+                </select>
+              </div>
+            </div>
+
+            {regStatus && (
+              <div
+                className={`rounded border px-3 py-2 text-xs ${
+                  regStatus.ok
+                    ? 'border-[#10B981]/40 bg-[#10B981]/10 text-[#34D399]'
+                    : 'border-[#EF4444]/40 bg-[#EF4444]/10 text-[#FCA5A5]'
+                }`}
+              >
+                {regStatus.text}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2">
+              {regMode === 'upload' ? (
+                <label className="flex flex-1 min-w-[260px] cursor-pointer items-center justify-between gap-2 rounded-md border border-dashed border-[#374151] bg-[#0B0F19] px-3 py-2 text-xs text-[#9CA3AF] hover:border-[#06B6D4]/60">
+                  <span className="truncate">
+                    {regFiles.length > 0
+                      ? `${regFiles.length} file(s): ${regFiles.map((f) => f.name).join(', ')}`
+                      : 'Click to select one or more .csv result files...'}
+                  </span>
+                  <input
+                    type="file"
+                    accept=".csv"
+                    multiple
+                    onChange={(e) => setRegFiles(Array.from(e.target.files || []))}
+                    className="hidden"
+                  />
+                  <span className="shrink-0 rounded bg-[#1F2937] px-2 py-0.5 text-[11px] font-medium text-[#F9FAFB]">
+                    Browse
+                  </span>
+                </label>
+              ) : (
+                <input
+                  type="text"
+                  value={regFolder}
+                  onChange={(e) => setRegFolder(e.target.value)}
+                  placeholder="e.g. C:\Projects\Reports\perf-delta\RawResults\10008"
+                  className="flex-1 min-w-[260px] rounded-md border border-[#1F2937] bg-[#0B0F19] px-3 py-2 font-mono text-xs text-[#F9FAFB] placeholder:text-[#6B7280] focus:border-[#06B6D4] focus:outline-none"
+                />
+              )}
+              <button
+                type="submit"
+                disabled={registering || (regMode === 'upload' ? regFiles.length === 0 : !regFolder.trim())}
+                className="inline-flex items-center gap-1.5 rounded-md bg-[#06B6D4] px-3.5 py-2 text-xs font-semibold text-[#0B0F19] hover:bg-[#22D3EE] disabled:opacity-40"
+              >
+                {registering ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                {registering ? 'Ingesting...' : 'Register Run'}
+              </button>
+            </div>
+          </form>
+
+          <div className="rounded-lg border border-[#1F2937] bg-[#111827] overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1F2937] px-4 py-3">
             <div>
               <h3 className="text-xs font-semibold uppercase tracking-wider text-[#F9FAFB]">
@@ -1267,6 +1425,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ vaultRuns, onSetting
                 )}
               </tbody>
             </table>
+          </div>
           </div>
         </div>
       )}

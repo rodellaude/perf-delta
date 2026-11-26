@@ -6,6 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
+import multer from 'multer';
+import { registerCsvFiles } from './ingest.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1112,6 +1114,86 @@ app.get('/api/runs', async (_req, res) => {
   } catch (err) {
     console.error('[dashboard-api] DuckDB query failed, serving fallback:', err.message);
     return res.json(loadFallbackJson());
+  }
+});
+
+const uploadTempDir = path.join(os.tmpdir(), 'perf-delta-uploads');
+if (!fs.existsSync(uploadTempDir)) {
+  fs.mkdirSync(uploadTempDir, { recursive: true });
+}
+const csvUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, uploadTempDir),
+    filename: (_req, file, cb) => {
+      const safe = path.basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, '_');
+      cb(null, `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safe}`);
+    },
+  }),
+  fileFilter: (_req, file, cb) => {
+    if (/\.csv$/i.test(file.originalname)) cb(null, true);
+    else cb(new Error('Only .csv files are supported.'));
+  },
+  limits: { fileSize: 500 * 1024 * 1024, files: 30 },
+});
+
+app.post('/api/runs/register', requireAdmin, (req, res) => {
+  const isMultipart = /multipart\/form-data/i.test(String(req.headers['content-type'] || ''));
+  const handleRegister = async (uploadedFiles) => {
+    const tempPaths = (uploadedFiles || []).map((f) => f.path);
+    try {
+      const cfgPath = path.join(PROJECT_ROOT, 'config.yaml');
+      const config = fs.existsSync(cfgPath) ? yaml.load(fs.readFileSync(cfgPath, 'utf8')) || {} : {};
+      const { dbPath } = loadConfig();
+      const toolType = String(req.body?.toolType || 'jmeter').trim().toLowerCase() === 'neoload' ? 'neoload' : 'jmeter';
+
+      let filesToIngest = [];
+      if (uploadedFiles && uploadedFiles.length > 0) {
+        filesToIngest = uploadedFiles.map((f) => ({
+          filePath: f.path,
+          originalName: f.originalname,
+        }));
+      } else if (req.body?.folderPath) {
+        const folder = String(req.body.folderPath).trim().replace(/^"|"$/g, '');
+        if (!fs.existsSync(folder) || !fs.statSync(folder).isDirectory()) {
+          return res.status(400).json({ ok: false, error: `Folder not found: ${folder}` });
+        }
+        const csvs = fs.readdirSync(folder).filter((n) => /\.csv$/i.test(n)).sort();
+        if (csvs.length === 0) {
+          return res.status(400).json({ ok: false, error: `No .csv files found in: ${folder}` });
+        }
+        filesToIngest = csvs.map((name) => ({
+          filePath: path.join(folder, name),
+          originalName: name,
+        }));
+      } else {
+        return res.status(400).json({ ok: false, error: 'Upload at least one .csv file or specify a folderPath.' });
+      }
+
+      const result = await registerCsvFiles({ files: filesToIngest, toolType, dbPath, config });
+      console.log(`[dashboard-api] Admin '${req.adminUser}' registered run #${result.runId} (${result.totalSamples} samples in ${result.elapsedMs}ms)`);
+      return res.json(result);
+    } catch (err) {
+      return res.status(400).json({ ok: false, error: err?.message || 'Registration failed.' });
+    } finally {
+      for (const p of tempPaths) {
+        try {
+          if (fs.existsSync(p)) fs.unlinkSync(p);
+        } catch {
+          // ignore temp cleanup errors
+        }
+      }
+    }
+  };
+
+  if (isMultipart) {
+    csvUpload.array('files', 30)(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({ ok: false, error: err.message || 'File upload failed.' });
+      }
+      handleRegister(req.files || []);
+    });
+  } else {
+    handleRegister([]);
   }
 });
 
