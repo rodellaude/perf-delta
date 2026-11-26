@@ -1,3 +1,9 @@
+/**
+ * Top 4 Executive KPI Cards (`dashboard-ui/src/components/KpiSummaryRow.tsx`)
+ *
+ * Displays Peak Virtual Users, Avg Throughput (req/s), P95 Response Time (ms),
+ * and Error Rate (%) with SLA Pass/Fail indicators and inline Baseline Delta pills (`▲`/`▼` %).
+ */
 import React from 'react';
 import { AlertTriangle, CheckCircle2, Gauge, Timer, Users, XCircle } from 'lucide-react';
 import { PerformanceTestRun, TelemetryPoint } from '../types/performance';

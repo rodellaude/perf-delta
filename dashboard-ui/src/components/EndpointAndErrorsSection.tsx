@@ -1,3 +1,10 @@
+/**
+ * Applications, Scenarios, Transactions & Compare Breakdown (`EndpointAndErrorsSection.tsx`)
+ *
+ * Renders the full-width sortable/searchable analytical tables for each deep-dive tab
+ * (`applications`, `scenarios`, `endpoints`, and `compare` vs Baseline Scorecard) with
+ * SLA breach highlighting and inline Baseline Delta (`▲`/`▼` %) indicators.
+ */
 import React, { useMemo, useState } from 'react';
 import {
   AlertOctagon,

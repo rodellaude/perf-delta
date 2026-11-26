@@ -42,7 +42,7 @@ if (-not (Test-Path (Join-Path $ApiDir "node_modules"))) {
     try { npm install } finally { Pop-Location }
 }
 
-if (-not (Test-Path (Join-Path $UiDir "node_modules"))) {
+if (($Dev -or $Rebuild -or -not (Test-Path $DistIndex)) -and -not (Test-Path (Join-Path $UiDir "node_modules"))) {
     Write-Host ">>> [2/3] Installing UI dependencies (dashboard-ui)..." -ForegroundColor Cyan
     Push-Location $UiDir
     try { npm install } finally { Pop-Location }

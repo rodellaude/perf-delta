@@ -1,3 +1,11 @@
+/**
+ * Pure-TypeScript Offline Static HTML Report Generator (`dashboard-ui/src/utils/staticHtmlExport.ts`)
+ *
+ * Generates a self-contained, single-file HTML5 report (`~80–150 KB`, < 200ms, zero external CDNs)
+ * directly in the browser reflecting the user's exact active run, baseline, multi-select scope,
+ * saved AI Executive Summary, and Dark/Light theme. Includes a collapsible left sidebar,
+ * inline SVG Telemetry & Trend charts with Copy PNG, searchable/sortable tables, and Glossary.
+ */
 import { GLOSSARY_ENTRIES } from '../components/GlossaryView';
 import { PerformanceTestRun, TelemetryPoint } from '../types/performance';
 import { computeFallbackApdex, synthesizeExecutiveSummary } from './executiveSummary';

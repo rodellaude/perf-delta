@@ -1,3 +1,10 @@
+/**
+ * Synchronized Telemetry Charts Row (`dashboard-ui/src/components/TelemetryChartsRow.tsx`)
+ *
+ * Renders the 2 primary Recharts time-series panels (Concurrency & Throughput + Response Time
+ * P95/P90/Avg) with optional dashed Baseline overlays, SLA threshold line, Dark/Light theme
+ * awareness, and 2× Retina `Copy PNG` export buttons.
+ */
 import React, { useRef, useState } from 'react';
 import { Camera, Check } from 'lucide-react';
 import {

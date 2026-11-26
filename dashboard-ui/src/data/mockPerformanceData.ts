@@ -1,3 +1,9 @@
+/**
+ * Built-in Simulated Stress Telemetry (`dashboard-ui/src/data/mockPerformanceData.ts`)
+ *
+ * Provides deterministic demo runs when `Data/Performance_Vault.db` has no registered runs yet,
+ * and allows previewing the Cyber-Slate UI offline without a live backend.
+ */
 import { LoadPhase, PerformanceTestRun, TelemetryPoint } from '../types/performance';
 
 function seededNoise(seed: number): number {

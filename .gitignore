@@ -12,6 +12,7 @@ node_modules/
 dashboard-api/node_modules/
 dashboard-ui/node_modules/
 dashboard-ui/dist/
+dist-offline/
 *.tsbuildinfo
 
 # Runtime Data, Vaults, Raw CSVs & Generated Reports

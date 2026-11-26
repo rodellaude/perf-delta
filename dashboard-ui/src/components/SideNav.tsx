@@ -1,3 +1,10 @@
+/**
+ * Collapsible Left Navigation Rail (`dashboard-ui/src/components/SideNav.tsx`)
+ *
+ * Organizes dashboard views in Macro -> Micro order:
+ * Overview -> Applications -> Scenarios -> Transactions -> Compare vs Base -> Trends ->
+ * Errors & Diagnostics -> Glossary, plus Admin-only DB Explorer & Settings anchored at the bottom.
+ */
 import React from 'react';
 import {
   AlertOctagon,

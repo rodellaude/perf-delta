@@ -1,3 +1,9 @@
+/**
+ * Reusable Searchable Multi-Select Include/Exclude Popover (`MultiSelectFilter.tsx`)
+ *
+ * Supports toggling `Include` (cyan) vs `Exclude` (crimson) filter modes, live keyword
+ * search, `All` / `Clear` shortcuts, and `Esc` / click-outside dismissal.
+ */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, Search, X } from 'lucide-react';
 

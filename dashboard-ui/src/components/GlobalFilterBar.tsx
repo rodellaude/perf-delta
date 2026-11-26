@@ -1,3 +1,10 @@
+/**
+ * Global Multi-Select Scope Filter Bar (`dashboard-ui/src/components/GlobalFilterBar.tsx`)
+ *
+ * Hosts cascading `Apps`, `Scenarios`, and `Transactions` Include/Exclude popovers
+ * plus a 1-click `Reset Scope` button. Selecting filters recalculates all KPIs, tables,
+ * Executive Summary, Trends, and live DuckDB time-series charts across the dashboard.
+ */
 import React from 'react';
 import { Filter, RotateCcw } from 'lucide-react';
 import { MultiFilterState, MultiSelectFilter } from './MultiSelectFilter';

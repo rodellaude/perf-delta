@@ -1,3 +1,8 @@
+/**
+ * Canonical Telemetry & SLA TypeScript Contracts (`dashboard-ui/src/types/performance.ts`)
+ *
+ * Shared shape between `dashboard-api/server.js` (`/api/runs`) and all React views.
+ */
 export type TimeRangeOption = '15m' | '1h' | 'full';
 export type LoadPhase = 'ramp-up' | 'steady' | 'spike' | 'ramp-down';
 

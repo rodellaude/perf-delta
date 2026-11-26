@@ -1,3 +1,11 @@
+/**
+ * Multi-Run Historical Trends & Regression Analytics (`dashboard-ui/src/components/TrendsView.tsx`)
+ *
+ * Analyzes performance across all DuckDB Vault builds grouped by Test Profile (`Project + Test Type`),
+ * reactive to the Global Filter Bar. Includes build toggle chips, `Compare vs` anchor build dropdown,
+ * configurable drift sensitivity (`±5% | ±10% | ±20%`), 3 Recharts trend charts with `Copy PNG`,
+ * and a build-over-build Scenario / Transaction P95 Drift Table.
+ */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bar,

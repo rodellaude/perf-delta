@@ -1,3 +1,10 @@
+/**
+ * Errors & Diagnostics View (`dashboard-ui/src/components/ErrorsDiagnosticsView.tsx`)
+ *
+ * Renders the Error Timeline chart (error counts + error rate % with Copy PNG),
+ * HTTP status code breakdown, top assertion failures, and a searchable URL / `failureMessage`
+ * drilldown table.
+ */
 import React, { useMemo, useRef, useState } from 'react';
 import {
   AlertOctagon,

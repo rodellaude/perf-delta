@@ -1,3 +1,10 @@
+/**
+ * Chart PNG Export Utility (`dashboard-ui/src/utils/chartExport.ts`)
+ *
+ * Clones a Recharts `<svg>` inside the given container, draws it onto a 2× Retina `<canvas>`
+ * with a theme-aware background and title header, copies the PNG to the system clipboard,
+ * and falls back to downloading a `.png` file if the Clipboard API is unavailable.
+ */
 export async function copyChartContainerAsPng(
   container: HTMLElement | null,
   title: string,

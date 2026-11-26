@@ -1,3 +1,11 @@
+/**
+ * Executive Summary & Assessment Banner (`dashboard-ui/src/components/ExecutiveSummaryBanner.tsx`)
+ *
+ * Displays the live 0ms deterministic summary by default and automatically loads any
+ * Admin-persisted AI summary from DuckDB (`GET /api/ai-summary?scopeKey=...`) for both
+ * Read-Only Viewers and Admins. Signed-in Admins can trigger/regenerate AI summaries via
+ * Gemini or Planit Amplify (`POST /api/ai-summary`). Supports clean nested bullet rendering.
+ */
 import React, { useEffect, useRef, useState } from 'react';
 import {
   CheckCircle2,
@@ -424,6 +432,9 @@ export const ExecutiveSummaryBanner: React.FC<ExecutiveSummaryBannerProps> = ({
                 if (/^\s{2,}[-*•]\s+/.test(p)) {
                   const subText = p.replace(/^\s+[-*•]\s+/, '').trim();
                   const parent = bullets.length > 0 ? bullets[bullets.length - 1] : null;
+                  // Only nest inside a true top-level bullet (`!parent.wasSub`) so when an LLM
+                  // outputs a plain heading (`Improved:`) followed by indented items, all items
+                  // stay at the same sibling level instead of nesting under the first item.
                   if (parent && !parent.wasSub) {
                     parent.children.push(subText);
                   } else {

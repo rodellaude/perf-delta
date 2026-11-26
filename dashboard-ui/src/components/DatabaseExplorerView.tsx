@@ -1,3 +1,10 @@
+/**
+ * Admin-Only DuckDB Vault Explorer (`dashboard-ui/src/components/DatabaseExplorerView.tsx`)
+ *
+ * 2-pane SQL workbench backed by `GET /api/db/schema` and `POST /api/db/query` (strictly READ_ONLY).
+ * Provides an expandable table/column schema browser, 8 ready-to-use performance queries auto-populated
+ * with the active Run & Baseline IDs, `Ctrl+Enter` execution, and CSV / JSON result export.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,

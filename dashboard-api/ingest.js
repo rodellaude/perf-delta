@@ -1,3 +1,11 @@
+/**
+ * Native DuckDB CSV Ingestion Engine (`dashboard-api/ingest.js`)
+ *
+ * Shared by BOTH the Web UI upload endpoint (`POST /api/runs/register`) and the CLI (`register-cli.js`).
+ * Uses DuckDB's native C++ `read_csv_auto(..., all_varchar=true)` reader to stream JMeter / NeoLoad
+ * CSVs straight into `performance_history` without loading large files into Node.js V8 memory,
+ * then builds 6 pre-aggregated `agg_*` summary tables for sub-200ms dashboard queries.
+ */
 import fs from 'node:fs';
 import path from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';

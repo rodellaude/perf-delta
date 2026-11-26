@@ -1,3 +1,9 @@
+/**
+ * Standalone Node.js CLI for CSV Registration (`dashboard-api/register-cli.js`)
+ *
+ * Invoked by `register.ps1` or CI/CD pipelines:
+ *   node dashboard-api/register-cli.js --folder="C:\path\to\csvs" --tool=jmeter [--db="..."]
+ */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

@@ -1,3 +1,9 @@
+/**
+ * Admin Login & First-Time Setup Modal (`dashboard-ui/src/components/LoginModal.tsx`)
+ *
+ * Automatically switches between First-Time Admin Setup (`POST /api/auth/setup`) when no
+ * `admin_password_hash` exists in `secrets.yaml` and standard Admin Sign-In (`POST /api/auth/login`).
+ */
 import React, { useEffect, useState } from 'react';
 import { KeyRound, Loader2, Lock, ShieldCheck, X } from 'lucide-react';
 

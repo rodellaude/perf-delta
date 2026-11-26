@@ -1,3 +1,13 @@
+/**
+ * Admin-Only Workspace Settings (`dashboard-ui/src/components/SettingsView.tsx`)
+ *
+ * Live YAML-backed configuration workbench (`GET/PUT /api/settings`) organized into 5 sub-tabs:
+ *  1. SLA Thresholds (`SLA/performance-sla.yaml` + per-transaction prefix overrides)
+ *  2. AI Executive Summary (explicit Gemini vs Planit Amplify selector, masked secrets, Test Connection)
+ *  3. Label Exclusions (`config.yaml` `label_exclusions` + hardcoded exclusion notice)
+ *  4. Manage Runs (Drag-and-Drop CSV / Server Folder registration + typed-confirmation Run Deletion)
+ *  5. General & Paths (project metadata, IANA timezone, file paths, Admin password rotation)
+ */
 import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,

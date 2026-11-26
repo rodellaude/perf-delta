@@ -1,3 +1,10 @@
+/**
+ * Single-Row Top Navigation Bar (`dashboard-ui/src/components/TopNavBar.tsx`)
+ *
+ * Houses Current Run & Baseline Run selectors, time-window switcher (`15m | 1h | Full`),
+ * simulated Live toggle, Dark/Light theme switcher, 1-click Read-Only `Share` link,
+ * pure-TS `HTML` report export, `JSON` export, and Grafana-style `Login` / `Admin Logout`.
+ */
 import React, { useState } from 'react';
 import {
   Activity,

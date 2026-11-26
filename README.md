@@ -78,7 +78,9 @@ CSV files must follow the naming convention:
 ## Project Layout
 ```text
 perf-delta/
-├── launch-dashboard.ps1          # Single-port LAN server launcher (:8080)
+├── launch-dashboard.ps1          # Single-port LAN server launcher (Windows, :8080)
+├── launch-dashboard.sh           # Single-port LAN server launcher (Linux/macOS, :8080)
+├── package-offline.ps1           # Optional air-gapped offline zip packager (Windows x64)
 ├── register.ps1                  # Pure-Node.js CSV registration CLI wrapper
 ├── config.yaml                   # Live workspace config (AI provider, prompt, exclusions, timezone)
 ├── secrets.yaml                  # Git-ignored secrets (Admin hash, Gemini key, Amplify token)
@@ -143,7 +145,28 @@ Base URL: `http://localhost:8080` (or `http://<your-IP>:8080`). Admin endpoints 
 
 ---
 
-## Transferring to Another Machine
+## Transferring & Deploying on Restricted / Air-Gapped Corporate Networks
+
+At runtime, **Perf-Delta is 100% self-contained locally** — all charts (Recharts), icons (Lucide), **Inter & JetBrains Mono fonts** (`@fontsource/*`), DuckDB vault, and offline Static HTML export make **zero external CDN requests**.
+- **AI Executive Summary offline behavior:** **Planit Amplify** works if allowlisted on your corporate network; if no AI endpoint is reachable, Perf-Delta runs cleanly on its built-in **0 ms deterministic Executive Summary**.
+
+### Option A — Online / Corporate npm Mirror *(Default — Recommended)*
+Use this whenever the target machine can reach `registry.npmjs.org` or an internal corporate npm mirror (Artifactory, Nexus, Azure Artifacts):
 1. Install **Node.js 20+ LTS**.
-2. Clone or copy this repository (copy `Data/Performance_Vault.db` and `secrets.yaml` if transferring existing runs/credentials).
-3. Run `.\launch-dashboard.ps1` — everything bootstraps automatically.
+2. *(Corporate mirror only)* Point npm to your internal registry:
+   ```powershell
+   npm config set registry https://<your-corporate-npm-mirror>/
+   ```
+3. Clone or copy this repository (copy `Data/Performance_Vault.db` and `secrets.yaml` if migrating existing runs/credentials).
+4. Run `.\launch-dashboard.ps1` — dependencies and UI bundle bootstrap automatically.
+
+### Option B — Air-Gapped Offline Bundle *(Fallback if npm Registry is Blocked)*
+If the target machine has **no internet and no internal npm mirror**, package a ready-to-run offline zip on a connected machine (same OS/arch, e.g. Windows x64):
+1. On a connected machine, run:
+   ```powershell
+   .\package-offline.ps1
+   # Optional: include your existing DuckDB vault
+   .\package-offline.ps1 -IncludeVault
+   ```
+   This builds `dist-offline/perf-delta-offline-win-x64.zip` containing `dashboard-api/` (+ `node_modules/`), `dashboard-ui/dist/` (with bundled local fonts), `config.yaml`, `SLA/`, and launchers — **excluding `secrets.yaml` and raw CSVs**.
+2. Copy the zip to the restricted machine, unzip, and run `.\launch-dashboard.ps1` — starts immediately with **zero internet access**.

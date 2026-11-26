@@ -1,3 +1,9 @@
+/**
+ * Performance Testing Glossary (`dashboard-ui/src/components/GlossaryView.tsx`)
+ *
+ * Searchable, category-filtered reference of 20 core performance metrics, SQL formulas,
+ * and SLA/Apdex definitions. Also exports `GLOSSARY_ENTRIES` for reuse in `staticHtmlExport.ts`.
+ */
 import React, { useMemo, useState } from 'react';
 import { BookOpen, Search } from 'lucide-react';
 

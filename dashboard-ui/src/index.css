@@ -1,3 +1,9 @@
+/**
+ * Global Cyber-Slate Dark & Light Theme Stylesheet (`dashboard-ui/src/index.css`)
+ *
+ * Defines base Tailwind layers, tabular monospace `.metric-num` typography,
+ * compact scrollbars, `html[data-theme="light"]` palette overrides, and print styles.
+ */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

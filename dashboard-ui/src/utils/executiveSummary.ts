@@ -1,3 +1,10 @@
+/**
+ * Deterministic 0ms Executive Summary & Apdex Calculator (`dashboard-ui/src/utils/executiveSummary.ts`)
+ *
+ * Synthesizes an instant 2-paragraph stakeholder summary, SLA verdict, Next Steps,
+ * and Apdex distribution directly from the active scoped run + baseline (zero LLM calls).
+ * Used as the live default and fallback whenever no Admin-saved AI summary exists for a scope.
+ */
 import { ApdexSummary, PerformanceTestRun } from '../types/performance';
 
 export interface ExecutiveSummaryResult {

@@ -1,3 +1,20 @@
+/**
+ * Perf-Delta Single-Port Backend Server (`dashboard-api/server.js`)
+ *
+ * Serves BOTH the built React dashboard (`dashboard-ui/dist/`) and the REST API (`/api/*`)
+ * on a single LAN-accessible port (default `:8080`, bound to `0.0.0.0`).
+ *
+ * Major sections in this file:
+ *  1. Config & SLA YAML Loader (`loadConfig`, `getRtThreshold`, Apdex helpers)
+ *  2. DuckDB Fast-Path Reader (`fetchRunsFromAggTables` — reads 6 pre-aggregated `agg_*` tables)
+ *  3. DuckDB Raw Fallback Reader (`fetchRunsFromDuckDB` — computes metrics if `agg_*` missing)
+ *  4. Authentication & Admin RBAC (`scryptSync` + `timingSafeEqual` + `HttpOnly` session cookies)
+ *  5. Runs, Scoped Time-Series, CSV Registration (`multer` + `ingest.js`) & Cascading Run Delete
+ *  6. Persisted AI Executive Summaries (Gemini & Planit Amplify + DuckDB `ai_summaries` table)
+ *  7. Live YAML Settings API (`GET/PUT /api/settings` with masked secrets & atomic YAML writes)
+ *  8. Read-Only DuckDB SQL Explorer (`GET /api/db/schema`, `POST /api/db/query`)
+ *  9. Single-Port Static UI Hosting & Startup LAN URL Banner
+ */
 import express from 'express';
 import cors from 'cors';
 import crypto from 'node:crypto';
@@ -87,6 +104,11 @@ function loadConfig() {
   };
 }
 
+/**
+ * Resolves the effective Response Time SLA threshold (ms) for a transaction label.
+ * Uses longest-prefix matching against `SLA/performance-sla.yaml` overrides so a
+ * specific override (e.g. `MyMSD_003_Login`) always wins over a shorter prefix (`MyMSD`).
+ */
 function getRtThreshold(label, sla) {
   if (!sla.rtOverrides || sla.rtOverrides.length === 0) return sla.defaultP95Sla;
   const str = String(label || '');
@@ -149,6 +171,8 @@ function buildSqlThresholdExpr(sla) {
   return `CASE ${cases} ELSE ${sla.defaultP95Sla} END`;
 }
 
+// BlazeMeter Parallel Controller rows wrap child requests and double-count latency/errors;
+// always exclude them across ingestion, aggregation, endpoints, and error rollups.
 const HARDCODED_EXCLUDED_SUBSTRINGS = ['bzm - parallel controller'];
 
 function isExcludedLabel(label, exclSet) {

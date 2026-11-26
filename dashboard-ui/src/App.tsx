@@ -1,3 +1,15 @@
+/**
+ * Root Application Shell (`dashboard-ui/src/App.tsx`)
+ *
+ * Coordinates all client-side state for Perf-Delta Live:
+ *  - Run loading from `/api/runs` (with static `/vault-runs.json` & mock fallback)
+ *  - Multi-Select Include/Exclude Global Scope (`applyGlobalScope` recalculates KPIs,
+ *    Apdex, tables, and errors in 0ms; fetches filtered DuckDB `/timeseries` on demand)
+ *  - Grafana-style URL State Sync (`?run=&base=&tab=&range=&apps=&scenarios=&endpoints=`)
+ *    and 1-click Read-Only Share Link generation
+ *  - Admin authentication hydration (`/api/auth/status`) and role-gated views
+ *  - Pure-TS offline Static HTML report export (`exportStaticHtmlReport`)
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertOctagon, ArrowRight, Flame } from 'lucide-react';
 import { MOCK_TEST_RUNS } from './data/mockPerformanceData';
@@ -238,6 +250,9 @@ function readInitialUrlState() {
 }
 
 export const App: React.FC = () => {
+  // Hydrate initial state from URL query params once on mount.
+  // `skipNextRunResetRef` prevents the initial `selectedRunId` assignment from wiping
+  // URL-hydrated global filters when a user opens a shared filtered link.
   const initialUrlRef = useRef(readInitialUrlState());
   const skipNextRunResetRef = useRef(true);
   const runsLoadedRef = useRef(false);
